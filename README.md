@@ -6,10 +6,11 @@
 [📦Installation](#📦installation) | 
 [🚀Quick Start](#🚀quick-start) | 
 [🛠️Usage](#🛠️usage) | 
+[🌐 Website](https://sands-lab.github.io/nika/) | 
 [📚Cite](#📚cite)
 
 [![ArXiv Link](https://img.shields.io/badge/arXiv-2512.16381-red?logo=arxiv)](https://arxiv.org/abs/2512.16381) 
-[![Website](https://img.shields.io/badge/-Project%20Page-1E88E5?logo=googlechrome&logoColor=white&labelColor=24292f)](https://sands-lab.github.io/nika/)
+[![Project Page](https://img.shields.io/badge/-Project%20Page-1E88E5?logo=googlechrome&logoColor=white&labelColor=24292f)](https://sands-lab.github.io/nika/)
 [![Open Telco AI](https://img.shields.io/badge/-Open%20Telco%20AI-00AEEF?logo=gsma&logoColor=white&labelColor=24292f)](https://www.open-telco.ai/resources/nika/)
 
 </div>
