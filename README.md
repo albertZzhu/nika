@@ -1,5 +1,6 @@
 <div align="center">
-<h1>A Network Arena for Benchmarking AI Agents on Network Troubleshooting</h1>
+
+<img src="./assets/images/nika-banner.svg" alt="NIKA" width="100%"/>
 
 [🤖Overview](#🤖overview) | 
 [📦Installation](#📦installation) | 
@@ -8,21 +9,43 @@
 [📚Cite](#📚cite)
 
 [![ArXiv Link](https://img.shields.io/badge/arXiv-2512.16381-red?logo=arxiv)](https://arxiv.org/abs/2512.16381) 
-[![Project Page](https://img.shields.io/badge/-Project%20Page-1E88E5?logo=googlechrome&logoColor=white&labelColor=24292f)](https://sands-lab.github.io/nika/)
+[![Website](https://img.shields.io/badge/-Project%20Page-1E88E5?logo=googlechrome&logoColor=white&labelColor=24292f)](https://sands-lab.github.io/nika/)
 [![Open Telco AI](https://img.shields.io/badge/-Open%20Telco%20AI-00AEEF?logo=gsma&logoColor=white&labelColor=24292f)](https://www.open-telco.ai/resources/nika/)
 
 </div>
 
+## What is NIKA?
+
+Think about SWE-bench, but for network troubleshooting. 
+
+NIKA, **N**etwork **I**ncident Benchmar**k** for **A**I Agents,
+it is an open benchmark for agentic evaluations on network troubleshooting tasks. It connects any agent directly to a live network stack: routers, switches, hosts, and telemetry tools, all running on general-purpose computer. NIKA reproduces hundreds of realistic faults covering data center networks, campus networks, ISP backbones, SDN fabrics, overlay networks, and CNIs. 
+
+
+## Why NIKA?
+
+NIKA lets you plug in any LLM or agent framework and measure its operational capability under identical, reproducible conditions. 
+
+It helps different users answer questions like:
+
+- **[Network Engineer and SREs]** "I respond to network incidents every day. I want an AI agent to help, but I'm not sure it will understand my topology or make things worse."
+- **[AI Researcher]** "I'm designing a new agent architecture for long-horizon network tasks. I need a benchmark to ablate components, measure reproducibly, and compare against published baselines."
+- **[Telecom Manager]** "A vendor is pitching me an AI solution for network operations. It passes all the standard telecom benchmarks (TeleQnA, TeleLogs, TeleMath, 3GPP-TSG), but I need objective evidence it can handle real incidents before I sign off."
+- **[Developer]** "I'm building a network copilot and need to validate it handles edge cases, misconfigs, attacks, and resource contention, before it touches a real network."
+- **[ML Engineer]** "I want to fine-tune an open-source model on network troubleshooting and need a structured dataset paired with a rigorous evaluation framework."
+- **[RL Researcher]** "I want agents to self-improve on network tasks through trial and error. I need an environment with reproducible episodes, clear reward signals, and principled train/test splits to measure generalization to unseen fault types and topologies."
+- **[Open-Source Contributor]** "I want to contribute a new network scenario or fault type to the community and have it evaluated systematically."
+
+
 <h1 id="🤖overview">🤖 Overview</h1>
 
-![alt text](./assets/images/nika_arch_gpt.png)
+![NIKA Architecture](./assets/images/architecture.png)
 
 This repository is a unified platform that can offer: 
-1. A benchmark suite of curated network incidents that covers 56 realistic network issues, ranging from link and host failures to resource contention, and includes 15 registered network scenarios (including Kubernetes and Containerlab labs), seven of which can be instantiated at different topology sizes, spanning campus, data center, and cloud-native networks. The full benchmark YAML currently contains 702 troubleshooting incidents for evaluating AI agents. Each incident specifies deterministic inject parameters (device names, etc.); IP and netmask values are derived from the live lab at inject time.
-2. A modular plug-and-play orchestration platform that connects AI agents with the network environment, enabling real-time troubleshooting in realistic conditions, and providing a human-facing interface to monitor agent performance.
+1. **NIKA Benchmark**: A benchmark suite of curated network incidents that covers 56 realistic network issues, ranging from link and host failures to resource contention, and includes 15 registered network scenarios (including Kubernetes and Containerlab labs), seven of which can be instantiated at different topology sizes, spanning campus, data center, and cloud-native networks. The full benchmark YAML currently contains 702 troubleshooting incidents for evaluating AI agents. Each incident specifies deterministic inject parameters (device names, etc.); IP and netmask values are derived from the live lab at inject time.
+2. **NIKA Orchestrator**: A modular plug-and-play orchestration platform that connects AI agents with the network environment, enabling real-time troubleshooting in realistic conditions, and providing a human-facing interface to monitor agent performance.
 
-
-💡 **Note:** We are actively developing this framework. If you have any suggestions or are interested in contributing, feel free to reach out to us!
+<!-- 💡 **Note:** We are actively developing this framework. If you have any suggestions or are interested in contributing, feel free to reach out to us! -->
 
 ## Features
 
