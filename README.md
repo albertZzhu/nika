@@ -2,6 +2,8 @@
 
 <img src="./assets/images/nika-banner.svg" alt="NIKA" width="100%"/>
 
+<br />
+
 [🤖Overview](#🤖overview) | 
 [📦Installation](#📦installation) | 
 [🚀Quick Start](#🚀quick-start) | 
@@ -35,7 +37,7 @@ It helps different users answer questions like:
 - 💬 **ML Engineer** "I want to fine-tune an open-source model on network troubleshooting and need a structured dataset paired with a rigorous evaluation framework."
 - 💬 **Open-Source Contributor** "I want to contribute a new network scenario or fault type to the community and have it evaluated systematically."
 
-
+<br />
 <h1 id="🤖overview">🤖 Overview</h1>
 
 ![NIKA Architecture](./assets/images/architecture.png)
@@ -58,13 +60,14 @@ This repository is a unified platform that can offer:
 - **Multi-session scalability**: Session-based workflow with multi-session support (`nika session`, `--session_id`). Run isolated sessions in parallel to speed-up evaluations.
 - **NIKA SDK**: Extend with your own network topology and configuration, and reproduce your failure case using NIKA's modules for traffic generation and fault injection. 
 
-
+<br />
 <h1 id="📦installation">📦 Installation</h1>
 
 ## Requirements
 
 - [Kathará](https://www.kathara.org/). 
-  Follow the [official installation guide](https://github.com/KatharaFramework/Kathara?tab=readme-ov-file#installation) to install Kathará.
+  Follow the [official installation guide](https://github.com/KatharaFramework/Kathara?tab=readme-ov-file#installation) to install Kathará. Required for Kathará-backed scenarios.
+- [Containerlab](https://containerlab.dev/). Required only for Containerlab-backed scenarios.
 - Python >= 3.12
 
 
@@ -97,6 +100,7 @@ Login again or activate temporaily with
 newgrp docker
 ```
 
+<br />
 <h1 id="🚀quick-start">🚀 Quick Start</h1>
 
 ## Configure environment variables
@@ -213,8 +217,8 @@ uv run --with pytest pytest
 uv run --with pytest pytest -v
 
 # run only selected test files
-uv run --with pytest pytest tests/runtime/ -v
-uv run python -m unittest tests.benchmark.test_resume -v
+uv run --with pytest pytest tests/nika/runtime/ -v
+uv run python -m unittest tests.nika.workflows.benchmark.test_resume -v
 ```
 
 <h1 id="🛠️usage">🛠️ Usage</h1>
@@ -293,7 +297,7 @@ nika agent run -a byo.langgraph -p openai -m gpt-5-mini -n 20
 nika agent run -a byo.langgraph -p ollama -m qwen2.5:7b -n 20
 ```
 
-Observability: LangSmith (`byo.langgraph`, `local_cli.codex_cli`, `local_cli.claude_cli`); Langfuse (`byo.langgraph` only). See `.env.example`.
+Observability: optional Langfuse (`byo.langgraph` only, enable with `NIKA_LANGFUSE_ENABLED=true`). See `.env.example`.
 
 ### `byo.mcp_agent` (`byo/mcp_agent`)
 
@@ -437,25 +441,42 @@ Registered scenarios (see `nika env list`) live under `src/nika/net_env/`, organ
 - `kathara/` — Kathara-based scenarios (topology generators, startup files, network configs)
 - `containerlab/` — Containerlab-based scenarios
 
-| Scenario ID | Scalable | Description |
-| ----------- | -------- | ----------- |
-| `dc_clos_bgp` | ✓ | Multi-tier data center CLOS with EBGP (FRR). |
-| `dc_clos_service` | ✓ | Data center CLOS with DNS/HTTP edge services and external clients. |
-| `ospf_enterprise_static` | ✓ | Enterprise hierarchical OSPF network with static host addressing. |
-| `ospf_enterprise_dhcp` | ✓ | Enterprise OSPF network with DHCP for host addressing. |
-| `rip_small_internet_vpn` | ✓ | Small RIP-based Internet with external zones and WireGuard VPN overlay. |
-| `sdn_clos` | ✓ | Scalable SDN spine–leaf fabric with OpenFlow controller. |
-| `sdn_star` | ✓ | SDN star (hub-and-spoke) topology with OpenFlow controller. |
-| `simple_bgp` | -- | Compact inter-domain BGP lab (two routers, two hosts). |
-| `p4_int` | -- | P4 spine–leaf testbed with In-band Network Telemetry (InfluxDB). |
-| `p4_bloom_filter` | -- | P4 bloom-filter data-plane validation testbed. |
-| `p4_counter` | -- | P4 counter pipeline testbed. |
-| `p4_mpls` | -- | P4 MPLS data-plane testbed. |
-| `k8s_lab` | -- | Fat-tree BGP fabric with k3s cluster, MetalLB, NGINX Ingress, and sample microservices. See [k8s_lab README](src/nika/net_env/kathara/kubernetes/k8s_lab/README.md). |
-| `llmd_lab` | -- | Star topology with k3s cluster running llm-d disaggregated Prefill/Decode inference (simulated, no GPU). See [llmd_lab README](src/nika/net_env/kathara/kubernetes/llmd_lab/README.md). |
-| `min3clos` | -- | 3-node CLOS fabric with Nokia SR Linux ([Containerlab min clos](https://containerlab.dev/lab-examples/min-clos/)). |
+### Backend support
 
-Each scenario is registered in `src/nika/net_env/net_env_pool.py` and declares its supported backend (`kathara` or `containerlab`). Kathará scenarios use `lab.py` files to define topology, devices, and initial configurations; Containerlab scenarios render Containerlab topology files under `runtime/containerlab/`. See **[Creating Benchmark Tasks](docs/creating-benchmark-tasks.md)** for the NIKA extension workflow, and check [Kathará API Docs](https://github.com/KatharaFramework/Kathara/wiki/Kathara-API-Docs) or [Containerlab docs](https://containerlab.dev/) for backend details.
+NIKA supports two lab backends:
+
+- `kathara` — uses Kathará labs and Docker containers, and covers the existing routing, SDN, P4, and Kubernetes scenarios under `src/nika/net_env/kathara/`.
+- `containerlab` — uses Containerlab topology files and vendor/network OS containers for scenarios under `src/nika/net_env/containerlab/`, such as `min3clos`.
+
+Each scenario is bound to exactly one backend. Use `nika env list` to see which backend a scenario uses:
+
+```shell
+nika env list
+nika env run simple_bgp
+nika env run min3clos
+```
+
+Backend information is stored in the session metadata and reused by session-scoped commands such as `nika exec`, `nika failure inject`, `nika agent run`, and `nika session close`. Kathará scenarios build their topology from `lab.py`; Containerlab scenarios render topology files under `runtime/containerlab/`.
+
+| Scenario ID | Scalable | Backend | Description |
+| ----------- | -------- | -------- | ----------- |
+| `dc_clos_bgp` | ✓ | kathara | Multi-tier data center CLOS with EBGP (FRR). |
+| `dc_clos_service` | ✓ | kathara | Data center CLOS with DNS/HTTP edge services and external clients. |
+| `ospf_enterprise_static` | ✓ | kathara | Enterprise hierarchical OSPF network with static host addressing. |
+| `ospf_enterprise_dhcp` | ✓ | kathara | Enterprise OSPF network with DHCP for host addressing. |
+| `rip_small_internet_vpn` | ✓ | kathara | Small RIP-based Internet with external zones and WireGuard VPN overlay. |
+| `sdn_clos` | ✓ | kathara | Scalable SDN spine–leaf fabric with OpenFlow controller. |
+| `sdn_star` | ✓ | kathara | SDN star (hub-and-spoke) topology with OpenFlow controller. |
+| `simple_bgp` | -- | kathara | Compact inter-domain BGP lab (two routers, two hosts). |
+| `p4_int` | -- | kathara | P4 spine–leaf testbed with In-band Network Telemetry (InfluxDB). |
+| `p4_bloom_filter` | -- | kathara | P4 bloom-filter data-plane validation testbed. |
+| `p4_counter` | -- | kathara | P4 counter pipeline testbed. |
+| `p4_mpls` | -- | kathara | P4 MPLS data-plane testbed. |
+| `k8s_lab` | -- | kathara | Fat-tree BGP fabric with k3s cluster, MetalLB, NGINX Ingress, and sample microservices. See [k8s_lab README](src/nika/net_env/kathara/kubernetes/k8s_lab/README.md). |
+| `llmd_lab` | -- | kathara | Star topology with k3s cluster running llm-d disaggregated Prefill/Decode inference (simulated, no GPU). See [llmd_lab README](src/nika/net_env/kathara/kubernetes/llmd_lab/README.md). |
+| `min3clos` | -- | containerlab | 3-node CLOS fabric with Nokia SR Linux ([Containerlab min clos](https://containerlab.dev/lab-examples/min-clos/)). |
+
+Each scenario is registered in `src/nika/net_env/net_env_pool.py` and declares its supported backend (`kathara` or `containerlab`). See **[Creating Benchmark Tasks](docs/creating-benchmark-tasks.md)** for the NIKA extension workflow, and check [Kathará API Docs](https://github.com/KatharaFramework/Kathara/wiki/Kathara-API-Docs) or [Containerlab docs](https://containerlab.dev/) for backend details.
 
 ## Network issues
 
@@ -561,7 +582,7 @@ Each session directory under `{result_dir}/{session_id}/` (default `{result_dir}
 - **`events.jsonl`**: pipeline events (env deploy, fault inject, agent start/end, eval).
 - **`messages.jsonl`**: agent conversation and tool traces.
 
-LangSmith / Langfuse keys: `.env.example`. Custom loggers: `src/agent/utils/loggers.py` and **[src/agent/README.md](src/agent/README.md)**.
+Langfuse is optional and loaded only when `NIKA_LANGFUSE_ENABLED=true`. Keys: `.env.example`. Custom loggers: `src/agent/utils/loggers.py` and **[src/agent/README.md](src/agent/README.md)**.
 
 <h1 id="📚cite">📚 Cite</h1>
 

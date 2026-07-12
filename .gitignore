@@ -8,8 +8,9 @@ tmp/
 .vscode/
 **/results/**
 .env
+.env.sandbox.local
 /.venv
-**/.egg-info/**
+**/*egg-info/**
 /runtime/
 /.vscode/
 /figs/
@@ -25,3 +26,4 @@ uv.lock
 !src/agent/skills/.claude/**
 .pytest_cache/
 .ruff_cache/
+**/MagicMock/**
