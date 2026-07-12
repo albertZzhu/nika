@@ -19,10 +19,8 @@
 
 ## What is NIKA?
 
-Think about SWE-bench, but for network troubleshooting. 
-
-NIKA, **N**etwork **I**ncident Benchmar**k** for **A**I Agents,
-is an open benchmark for agentic evals on network troubleshooting tasks. It connects any agent directly to a live network stack: routers, switches, hosts, and telemetry tools, all running on general-purpose compute. NIKA reproduces hundreds of realistic faults covering data center networks, campus networks, ISP backbones, SDN fabrics, overlay networks, and Kubernetes CNIs. 
+Think about [SWE-Bench](https://github.com/swe-bench/SWE-bench), but for network troubleshooting. [NIKA](https://sands-lab.github.io/nika/), **N**etwork **I**ncident Benchmar**k** for **A**I Agents,
+is an *open benchmark for agentic evals on network troubleshooting tasks*. It connects any agent directly to a live network stack: routers, switches, hosts, and telemetry tools, all running on general-purpose compute. NIKA reproduces hundreds of realistic faults covering data center networks, campus networks, ISP backbones, SDN fabrics, overlay networks, and Kubernetes CNIs. 
 
 
 ## 🙋 Why NIKA?
@@ -42,12 +40,12 @@ It helps different users answer questions like:
 ![NIKA Architecture](./assets/images/architecture.png)
 
 NIKA is a unified platform that combines: 
-1. **NIKA Benchmark**: A benchmark suite of curated network incidents. Incidents are uniquely defined by their root-cause issue (I) and a network scenario (N). NIKA currently covers 56 network issues, including soft-, hard-, and gray-failures, and is shipped with 15 pre-defined network scenarios spanning campus, data center, and cloud-native networks. The full benchmark YAML currently yields 702 troubleshooting incidents for evaluating AI agents.
+1. **NIKA Benchmark**: A benchmark suite of curated network incidents. Incidents are uniquely defined by their underlying [root-cause issue (I)](#network-issues) and [network scenario (N)](#network-scenarios). NIKA currently covers 56 network issues, including soft-, hard-, and gray-failures, and is shipped with 15 pre-defined network scenarios spanning campus, data center, and cloud-native networks. The full benchmark YAML currently yields 702 troubleshooting incidents for evaluating AI agents.
 2. **NIKA Orchestrator**: A modular plug-and-play orchestration platform that connects AI agents with the *network environment*, enabling real-time access to telemetry interfaces via MCP telemetry severs, and providing a human-facing interface to judge agent performance. The orchestrator materializes the network incidents into the network environment starting from the incident specs. 
 
 ## Features
 
-- **Network emulators**: NIKA attaches to state-of-the-art network emulators as backends. Are you a [Kathará](https://www.kathara.org) or[containerlab](https://containerlab.dev) user? you can use NIKA with both.
+- **Network emulators**: NIKA attaches to state-of-the-art network emulators as backends. Are you a [Kathará](https://www.kathara.org) or [containerlab](https://containerlab.dev) user? you can use NIKA with both.
 - **Fault injection**: Parameterized fault injection (`nika failure describe`, `--set key=value`)
 - **Bring any AI agent**: Easy integration of custom AI agent.
 - **Zero-touch eval**: Pre-built network scenarios and fault injection mechanisms, with automatic evaluation mechanism.
