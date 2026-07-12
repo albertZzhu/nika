@@ -1,32 +1,13 @@
-"""Unit and integration tests for the llmd_lab scenario.
-
-Unit tests (no Docker required)
---------------------------------
-- Node classification (k3s nodes, client host).
-- Machine flags (bridged k3s nodes, privileged k3s nodes).
-
-Integration tests (require Docker, root, and ``rancher/k3s`` images)
---------------------------------------------------------------------
-- Deploy llmd_lab via CLI and verify the session is running.
-
-Prerequisites:
-  - Unit tests: uv run python -m unittest tests/nika/net_env/test_llmd_lab_verify.py -v
-  - Integration: Docker running as root (k3s nodes are privileged).
-"""
-
 from __future__ import annotations
 
-import unittest
-
-
+import pytest
 from nika.net_env.kathara.kubernetes.llmd_lab.lab import LLMDInferenceCluster
-
 from tests.support.integration_base import CliIntegrationTestCase, PerTestEnvTestCase
 from tests.support.prerequisites import docker_available, privileged_lab_supported
 from tests.support.net_env import instantiate_with_mocked_kathara
 
 
-class LLMDLabUnitTest(unittest.TestCase):
+class LLMDLabUnitTest:
     """Verify llmd_lab lab structure without Docker."""
 
     def _inst(self) -> LLMDInferenceCluster:
@@ -46,21 +27,23 @@ class LLMDLabUnitTest(unittest.TestCase):
             "worker4",
             "worker5",
         }
-        self.assertEqual(set(inst.kubernetes_nodes), expected_k8s)
+
+        assert set(inst.kubernetes_nodes) == expected_k8s
 
     def test_has_client_host(self) -> None:
         """llmd_lab must have the client node classified as a host."""
         inst = self._inst()
-        self.assertIn("client", inst.hosts)
+
+        assert "client" in inst.hosts
 
     def test_all_k3s_nodes_are_bridged(self) -> None:
         """All k3s nodes must have bridged=True for internet access."""
         inst = self._inst()
         for node_name in inst.kubernetes_nodes:
             machine = inst.lab.machines[node_name]
-            self.assertTrue(
-                machine.is_bridged(),
-                f"Expected {node_name} to be bridged but it is not",
+
+            assert machine.is_bridged(), (
+                f"Expected {node_name} to be bridged but it is not"
             )
 
     def test_k3s_nodes_are_privileged(self) -> None:
@@ -68,15 +51,15 @@ class LLMDLabUnitTest(unittest.TestCase):
         inst = self._inst()
         for node_name in inst.kubernetes_nodes:
             machine = inst.lab.machines[node_name]
-            self.assertTrue(
-                machine.is_privileged(),
-                f"Expected {node_name} to be privileged but it is not",
+
+            assert machine.is_privileged(), (
+                f"Expected {node_name} to be privileged but it is not"
             )
 
 
-@unittest.skipUnless(
-    docker_available() and privileged_lab_supported(),
-    "Requires Docker and root (privileged k3s containers)",
+@pytest.mark.skipif(
+    not (docker_available() and privileged_lab_supported()),
+    reason="Requires Docker and root (privileged k3s containers)",
 )
 class LLMDLabStartupVerifyTest(CliIntegrationTestCase, PerTestEnvTestCase):
     """Deploy llmd_lab via CLI and verify the session is running."""
@@ -86,8 +69,5 @@ class LLMDLabStartupVerifyTest(CliIntegrationTestCase, PerTestEnvTestCase):
     def test_session_running_and_listed(self) -> None:
         """Session must be running and llmd_lab must appear in env list."""
         list_output = self._invoke_ok(["env", "list"])
-        self.assertIn(LLMDInferenceCluster.LAB_NAME, list_output)
 
-
-if __name__ == "__main__":
-    unittest.main()
+        assert LLMDInferenceCluster.LAB_NAME in list_output

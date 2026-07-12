@@ -140,13 +140,13 @@ results/{session_id}/
 
 ```bash
 # Unit tests (no Docker)
-uv run python -m unittest tests.agent.test_sandbox_unit -v
+uv run pytest tests/agent/test_sandbox_unit.py -v
 
 # Security probes (requires built image)
-uv run python -m unittest tests.agent.test_sandbox_security -v
+uv run pytest tests/agent/test_sandbox_security.py -v
 
 # Full sandbox agent pipelines (Docker + Kathara + credentials)
-uv run python -m unittest tests.agent.test_sandbox_agents -v
+uv run pytest tests/agent/test_sandbox_agents.py -v
 ```
 
 ## Troubleshooting

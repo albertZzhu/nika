@@ -1,22 +1,7 @@
-"""Smoke tests for Containerlab service and runtime APIs on ``min3clos``.
-
-One shared lab exercises Linux host APIs, SRL router APIs, and semantic runtime
-operations to catch format/parsing failures without per-API scenario startup.
-
-Prerequisites:
-  - Docker running
-  - containerlab CLI and gnmic on PATH
-  - SR Linux and network-multitool images pulled
-
-Run:
-  uv run python -m unittest tests.nika.service.containerlab.test_containerlab_api -v
-"""
-
 from __future__ import annotations
 
-import unittest
+import pytest
 from typing import ClassVar
-
 from nika.net_env.containerlab.min3clos.verify import (
     CLIENT1,
     CLIENT2,
@@ -37,8 +22,8 @@ CLIENT_INTF = "eth1"
 LEAF_INTF = "e1-1"
 
 
-@unittest.skipUnless(
-    min3clos_prerequisites(), "containerlab, gnmic, or Docker not available"
+@pytest.mark.skipif(
+    not min3clos_prerequisites(), reason="containerlab, gnmic, or Docker not available"
 )
 class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
     SCENARIO = "min3clos"
@@ -60,29 +45,28 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
 
     def test_session_backend(self) -> None:
         row = self._session_row(self.session_id)
-        self.assertEqual(resolve_backend(row), "containerlab")
-        self.assertIsNotNone(row.get("topology_file"))
+        assert resolve_backend(row) == "containerlab"
+        assert row.get("topology_file") is not None
 
     def test_runtime_lifecycle_apis(self) -> None:
         runtime = self._runtime()
         nodes = self.smoke("runtime.list_nodes", runtime.list_nodes, expect_type=list)
         for name in EXPECTED_NODES:
-            self.assertIn(name, nodes)
+            assert name in nodes
         self.smoke("runtime.exists", runtime.exists, expect_type=bool)
         inspect = self.smoke("runtime.inspect", runtime.inspect, expect_type=list)
-        self.assertGreater(len(inspect), 0)
+        assert len(inspect) > 0
         container = self.smoke(
-            "runtime.get_container",
-            lambda: runtime.get_container(CLIENT1),
+            "runtime.get_container", lambda: runtime.get_container(CLIENT1)
         )
-        self.assertIsNotNone(container)
+        assert container is not None
         status = self.smoke(
             "runtime.node_status",
             lambda: runtime.node_status(CLIENT1),
             expect_type=str,
             min_len=1,
         )
-        self.assertIn(status, {"running", "paused", "not_found"})
+        assert status in {"running", "paused", "not_found"}
 
     def test_runtime_semantic_host_apis(self) -> None:
         runtime = self._runtime()
@@ -103,7 +87,7 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
             lambda: runtime.get_host_interfaces(CLIENT1),
             expect_type=list,
         )
-        self.assertIn(CLIENT_INTF, ifaces)
+        assert CLIENT_INTF in ifaces
         self.smoke(
             "runtime.get_host_mac_address",
             lambda: runtime.get_host_mac_address(CLIENT1, CLIENT_INTF),
@@ -116,13 +100,11 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
             expect_type=str,
             min_len=2,
         )
-        self.assertIn(operstate, {"up", "down", "unknown"})
-        self.assertTrue(
-            self.smoke(
-                "runtime.interface_exists",
-                lambda: runtime.interface_exists(CLIENT1, CLIENT_INTF),
-                expect_type=bool,
-            )
+        assert operstate in {"up", "down", "unknown"}
+        assert self.smoke(
+            "runtime.interface_exists",
+            lambda: runtime.interface_exists(CLIENT1, CLIENT_INTF),
+            expect_type=bool,
         )
         self.smoke(
             "runtime.tc_show_intf",
@@ -139,37 +121,31 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
             lambda: runtime.get_connected_devices(CLIENT1),
             expect_type=list,
         )
-        self.assertIn(LEAF1, peers)
-        self.assertTrue(
-            self.smoke(
-                "runtime.ping_ok",
-                lambda: runtime.ping_ok(CLIENT1, runtime.get_host_ip(CLIENT2) or ""),
-                expect_type=bool,
-            )
+        assert LEAF1 in peers
+        assert self.smoke(
+            "runtime.ping_ok",
+            lambda: runtime.ping_ok(CLIENT1, runtime.get_host_ip(CLIENT2) or ""),
+            expect_type=bool,
         )
 
     def test_runtime_srl_semantic_apis(self) -> None:
         runtime = self._runtime()
-        self.assertTrue(
-            self.smoke(
-                "runtime.uses_srl_router(leaf1)",
-                lambda: runtime.uses_srl_router(LEAF1),
-                expect_type=bool,
-            )
+        assert self.smoke(
+            "runtime.uses_srl_router(leaf1)",
+            lambda: runtime.uses_srl_router(LEAF1),
+            expect_type=bool,
         )
-        self.assertFalse(
-            self.smoke(
-                "runtime.uses_srl_router(client1)",
-                lambda: runtime.uses_srl_router(CLIENT1),
-                expect_type=bool,
-            )
+        assert not self.smoke(
+            "runtime.uses_srl_router(client1)",
+            lambda: runtime.uses_srl_router(CLIENT1),
+            expect_type=bool,
         )
         asn = self.smoke(
             "runtime.srl_get_bgp_as",
             lambda: runtime.srl_get_bgp_as(LEAF1),
             expect_type=int,
         )
-        self.assertGreater(asn, 0)
+        assert asn > 0
         self.smoke(
             "runtime.get_interface_operstate(leaf)",
             lambda: runtime.get_interface_operstate(LEAF1, LEAF_INTF),
@@ -179,13 +155,10 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
 
     def test_runtime_lab_api_adapter(self) -> None:
         runtime = self._runtime()
-        lab_api = self.smoke(
-            "runtime.lab_api",
-            lambda: runtime.lab_api,
-        )
+        lab_api = self.smoke("runtime.lab_api", lambda: runtime.lab_api)
         from nika.service.containerlab.adapters import LabRuntimeContainerlabAPI
 
-        self.assertIsInstance(lab_api, LabRuntimeContainerlabAPI)
+        assert isinstance(lab_api, LabRuntimeContainerlabAPI)
         self.smoke(
             "lab_api.srl_get_bgp_as",
             lambda: lab_api.srl_get_bgp_as(LEAF1),
@@ -204,8 +177,8 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
             lambda: api.get_host_net_config(CLIENT1),
             expect_type=dict,
         )
-        self.assertEqual(cfg["host_name"], CLIENT1)
-        self.assertIn("ip_route", cfg)
+        assert cfg["host_name"] == CLIENT1
+        assert "ip_route" in cfg
         self.smoke(
             "ContainerlabBaseAPI.ping_pair",
             lambda: api.ping_pair(CLIENT1, CLIENT2, count=1),
@@ -218,9 +191,7 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
             min_len=7,
         )
         self.smoke(
-            "ContainerlabBaseAPI.netstat",
-            lambda: api.netstat(CLIENT1),
-            min_len=1,
+            "ContainerlabBaseAPI.netstat", lambda: api.netstat(CLIENT1), min_len=1
         )
         self.smoke(
             "ContainerlabBaseAPI.ip_addr_statistics",
@@ -247,22 +218,20 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
         payload = self.smoke_async(
             "ContainerlabBaseAPI.get_reachability", _reachability, min_len=2
         )
-        parsed = assert_json_payload(
-            self, "ContainerlabBaseAPI.get_reachability", payload
-        )
-        self.assertIn("results", parsed)
-        self.assertTrue(parsed["results"])
+        parsed = assert_json_payload("ContainerlabBaseAPI.get_reachability", payload)
+        assert "results" in parsed
+        assert parsed["results"]
 
     def test_containerlab_srl_api(self) -> None:
         api = self._srl_api()
-        self.assertTrue(api.uses_srl_router(LEAF1))
-        self.assertFalse(api.uses_srl_router(CLIENT1))
+        assert api.uses_srl_router(LEAF1)
+        assert not api.uses_srl_router(CLIENT1)
         asn = self.smoke(
             "ContainerlabSRLAPI.srl_get_bgp_as",
             lambda: api.srl_get_bgp_as(LEAF1),
             expect_type=int,
         )
-        self.assertGreater(asn, 0)
+        assert asn > 0
         self.smoke(
             "ContainerlabSRLAPI.srl_exec_cli(version)",
             lambda: api.srl_exec_cli(LEAF1, "show version"),
@@ -292,15 +261,11 @@ class ContainerlabApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
             lambda: api.srl_bgp_acl_drop_179_present(LEAF1),
             expect_type=bool,
         )
-        self.assertEqual(
+        assert (
             self.smoke(
                 "ContainerlabSRLAPI.srl_get_bgp_as(re-check)",
                 lambda: api.srl_get_bgp_as(LEAF1),
                 expect_type=int,
-            ),
-            asn,
+            )
+            == asn
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

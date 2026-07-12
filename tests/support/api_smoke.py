@@ -1,10 +1,7 @@
-"""Shared helpers for live backend API smoke tests."""
-
 from __future__ import annotations
 
 import asyncio
 import json
-import unittest
 from collections.abc import Callable
 from typing import Any
 
@@ -23,22 +20,19 @@ class ApiSmokeMixin:
         try:
             result = fn()
         except json.JSONDecodeError as exc:
-            self.fail(f"{label}: JSON parse error: {exc}")
+            raise AssertionError(f"{label}: JSON parse error: {exc}") from exc
         except (ValueError, RuntimeError, TypeError) as exc:
-            self.fail(f"{label}: {type(exc).__name__}: {exc}")
+            raise AssertionError(f"{label}: {type(exc).__name__}: {exc}") from exc
 
         if expect_type is not None:
-            self.assertIsInstance(
+            assert isinstance(
                 result,
                 expect_type,
-                f"{label}: expected {expect_type}, got {type(result)}",
-            )
+            ), f"{label}: expected {expect_type}, got {type(result)}"
         if min_len > 0:
             text = "" if result is None else str(result)
-            self.assertGreaterEqual(
-                len(text),
-                min_len,
-                f"{label}: unexpected empty result ({result!r})",
+            assert len(text) >= min_len, (
+                f"{label}: unexpected empty result ({result!r})"
             )
         return result
 
@@ -52,10 +46,10 @@ class ApiSmokeMixin:
         return self.smoke(label, lambda: asyncio.run(fn()), min_len=min_len)
 
 
-def assert_json_payload(test: unittest.TestCase, label: str, payload: str) -> dict:
+def assert_json_payload(label: str, payload: str) -> dict:
     try:
         parsed = json.loads(payload)
     except json.JSONDecodeError as exc:
-        test.fail(f"{label}: invalid JSON: {exc}\n{payload!r}")
-    test.assertIsInstance(parsed, dict, f"{label}: JSON root must be an object")
+        raise AssertionError(f"{label}: invalid JSON: {exc}\n{payload!r}") from exc
+    assert isinstance(parsed, dict), f"{label}: JSON root must be an object"
     return parsed

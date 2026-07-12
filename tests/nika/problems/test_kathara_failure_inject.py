@@ -1,16 +1,4 @@
-"""Integration tests for Kathara CLI failure injection across fault categories.
-
-Each test starts a fresh lab, injects a fault, and asserts failure ps reports status=injected.
-
-Prerequisites:
-  - Docker must be running
-  - Run via: uv run python -m unittest tests.nika.problems.test_kathara_failure_inject -v
-"""
-
 from __future__ import annotations
-
-import unittest
-
 from tests.support.integration_base import PerTestEnvTestCase
 
 HOST = "pc1"
@@ -345,7 +333,3 @@ class ServiceDownVerifyTest(PerTestEnvTestCase):
     def test_dhcp_service_down(self) -> None:
         self._inject_failure("dhcp_service_down")
         self._assert_failure_injected("dhcp_service_down")
-
-
-if __name__ == "__main__":
-    unittest.main()

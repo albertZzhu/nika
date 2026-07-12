@@ -35,6 +35,51 @@ from agent.utils.phases import PHASES, SUBMISSION
 from agent.utils.skills import prepare_codex_workspace
 
 REASONING_EFFORT_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
+DEFAULT_STALL_TIMEOUT_S = 300
+RECONNECT_STALL_TIMEOUT_S = 120
+
+
+class CodexSubprocessStallError(Exception):
+    """Raised when Codex stops making progress (e.g. reconnect loops)."""
+
+    def __init__(self, *, stall_s: int, reconnect_failure: bool) -> None:
+        self.stall_s = stall_s
+        self.reconnect_failure = reconnect_failure
+        reason = (
+            "Codex reconnect attempts failed"
+            if reconnect_failure
+            else "no Codex progress"
+        )
+        super().__init__(f"stalled after {stall_s}s without {reason}")
+
+
+def _is_productive_codex_event(event: dict) -> bool:
+    """Return True when a JSONL event indicates real agent work, not a reconnect."""
+    event_type = event.get("type", "")
+    if event_type in {"thread.started", "turn.completed"}:
+        return True
+    if event_type == "item.completed":
+        return (event.get("item") or {}).get("type") not in {"error"}
+    if event_type == "item.started":
+        return (event.get("item") or {}).get("type") in {
+            "mcp_tool_call",
+            "command_execution",
+            "agent_message",
+        }
+    return False
+
+
+def _reconnect_transport_failed(event: dict) -> bool:
+    """Return True when Codex exhausted reconnect attempts or fell back transport."""
+    if event.get("type") == "error":
+        return "Reconnecting... 5/5" in event.get("message", "")
+    if event.get("type") == "item.completed":
+        item = event.get("item") or {}
+        if item.get("type") == "error":
+            message = item.get("message", "")
+            return "Falling back" in message or "timed out" in message.lower()
+    return False
+
 
 # ---------------------------------------------------------------------------
 # TOML helper
@@ -97,6 +142,10 @@ class CodexWorker:
         ``codex exec -c model_reasoning_effort=...``.
     timeout:
         Hard timeout in seconds for the subprocess (default 600 s).
+    stall_timeout:
+        Kill the subprocess when no productive Codex events arrive for this
+        many seconds (default 300 s).  After reconnect exhaustion the limit
+        drops to :data:`RECONNECT_STALL_TIMEOUT_S`.
     scenario_name:
         Used by :func:`~agent.utils.mcp_servers.select_diagnosis_servers` to pick relevant servers.
         Ignored for the submission phase (which always uses the task server).
@@ -110,6 +159,7 @@ class CodexWorker:
         model: str = "gpt-5.4-mini",
         reasoning_effort: str | None = None,
         timeout: int = 600,
+        stall_timeout: int = DEFAULT_STALL_TIMEOUT_S,
         scenario_name: str = "",
         *,
         stream_output: bool = True,
@@ -129,7 +179,10 @@ class CodexWorker:
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.timeout = timeout
+        self.stall_timeout = stall_timeout
         self.scenario_name = scenario_name
+        self._reconnect_failure_at: float | None = None
+        self._last_progress_at: float | None = None
 
         self.workspace = Path(session_dir) / "codex_workspace"
         self._codex_home = self.workspace / ".codex_home"
@@ -227,6 +280,9 @@ class CodexWorker:
             {"command": " ".join(cmd[:6] + ["..."]), "phase": self.phase},
         )
 
+        self._reconnect_failure_at = None
+        self._last_progress_at = None
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -237,6 +293,16 @@ class CodexWorker:
                 cwd=str(self.workspace),
             )
             returncode, stderr_text = await self._stream_subprocess(proc)
+        except CodexSubprocessStallError as exc:
+            self._logger.log(
+                "subprocess_stall",
+                {
+                    "phase": self.phase,
+                    "stall_s": exc.stall_s,
+                    "reconnect_failure": exc.reconnect_failure,
+                },
+            )
+            return f"ERROR: {self.phase} phase {exc}"
         except asyncio.TimeoutError:
             self._logger.log(
                 "subprocess_timeout", {"phase": self.phase, "timeout_s": self.timeout}
@@ -270,6 +336,48 @@ class CodexWorker:
         self._logger.log("subprocess_error", {"error": "output file not created"})
         return f"ERROR: {self.phase} phase produced no output"
 
+    def _remaining_before_stall(self, loop: asyncio.AbstractEventLoop) -> float:
+        now = loop.time()
+        limits: list[float] = []
+        if self._last_progress_at is not None:
+            limits.append(self.stall_timeout - (now - self._last_progress_at))
+        if self._reconnect_failure_at is not None:
+            limits.append(
+                RECONNECT_STALL_TIMEOUT_S - (now - self._reconnect_failure_at)
+            )
+        if not limits:
+            return float("inf")
+        return min(limits)
+
+    def _raise_if_stalled(self, loop: asyncio.AbstractEventLoop) -> None:
+        now = loop.time()
+        if (
+            self._reconnect_failure_at is not None
+            and now - self._reconnect_failure_at > RECONNECT_STALL_TIMEOUT_S
+        ):
+            raise CodexSubprocessStallError(
+                stall_s=RECONNECT_STALL_TIMEOUT_S,
+                reconnect_failure=True,
+            )
+        if (
+            self._last_progress_at is not None
+            and now - self._last_progress_at > self.stall_timeout
+        ):
+            raise CodexSubprocessStallError(
+                stall_s=self.stall_timeout,
+                reconnect_failure=False,
+            )
+
+    def _track_codex_progress(
+        self, event: dict, loop: asyncio.AbstractEventLoop
+    ) -> None:
+        if _reconnect_transport_failed(event):
+            if self._reconnect_failure_at is None:
+                self._reconnect_failure_at = loop.time()
+        if _is_productive_codex_event(event):
+            self._last_progress_at = loop.time()
+            self._reconnect_failure_at = None
+
     async def _stream_subprocess(
         self, proc: asyncio.subprocess.Process
     ) -> tuple[int, str]:
@@ -277,6 +385,7 @@ class CodexWorker:
         stderr_chunks: list[bytes] = []
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.timeout
+        self._last_progress_at = loop.time()
 
         async def _read_stderr() -> None:
             assert proc.stderr is not None
@@ -291,10 +400,20 @@ class CodexWorker:
         try:
             assert proc.stdout is not None
             while True:
-                remaining = deadline - loop.time()
+                self._raise_if_stalled(loop)
+
+                hard_remaining = deadline - loop.time()
+                if hard_remaining <= 0:
+                    proc.kill()
+                    await proc.wait()
+                    raise asyncio.TimeoutError
+
+                stall_remaining = self._remaining_before_stall(loop)
+                remaining = min(hard_remaining, stall_remaining)
                 if remaining <= 0:
                     proc.kill()
                     await proc.wait()
+                    self._raise_if_stalled(loop)
                     raise asyncio.TimeoutError
 
                 try:
@@ -304,13 +423,18 @@ class CodexWorker:
                 except asyncio.TimeoutError:
                     proc.kill()
                     await proc.wait()
+                    try:
+                        self._raise_if_stalled(loop)
+                    except CodexSubprocessStallError:
+                        raise
                     raise
 
                 if not line_bytes:
                     break
 
                 self._handle_stdout_line(
-                    line_bytes.decode("utf-8", errors="replace").rstrip("\n")
+                    line_bytes.decode("utf-8", errors="replace").rstrip("\n"),
+                    loop=loop,
                 )
         finally:
             await stderr_task
@@ -319,7 +443,12 @@ class CodexWorker:
         stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace")
         return returncode, stderr_text
 
-    def _handle_stdout_line(self, raw: str) -> None:
+    def _handle_stdout_line(
+        self,
+        raw: str,
+        *,
+        loop: asyncio.AbstractEventLoop | None = None,
+    ) -> None:
         """Parse one stdout line, log it, and optionally print a summary."""
         raw = raw.strip()
         if not raw:
@@ -331,6 +460,8 @@ class CodexWorker:
                 print(raw, flush=True)
             return
 
+        if loop is not None:
+            self._track_codex_progress(event, loop)
         self._log_codex_event(event)
 
     def _log_codex_event(self, event: dict) -> None:

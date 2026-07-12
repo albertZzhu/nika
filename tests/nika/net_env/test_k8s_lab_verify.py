@@ -1,36 +1,15 @@
-"""Unit and integration tests for the k8s_lab scenario.
-
-Unit tests (no Docker required)
---------------------------------
-- Node classification (FRR routers, k3s nodes, client host).
-- Machine flags (bridged as2r1, privileged k3s nodes).
-
-Integration tests (require Docker, root, and pre-pulled images)
----------------------------------------------------------------
-- Deploy k8s_lab and verify BGP fabric, k3s cluster, ingress, and client access
-  using ``nika exec`` / Kathara exec (same command path as the CLI).
-
-Prerequisites:
-  - Unit tests: uv run python -m unittest tests/nika/net_env/test_k8s_lab_verify.py -v
-  - Integration: Docker running as root (k3s nodes are privileged), images pulled via
-    ``ensure_k8s_lab_images()`` on first deploy.
-"""
-
 from __future__ import annotations
 
+import pytest
 import time
-import unittest
-
-
 from nika.net_env.kathara.kubernetes.k8s_lab.lab import K8sFatTreeBGP
 from nika.service.kathara.base_api import KatharaBaseAPI
-
 from tests.support.integration_base import SharedSessionTestCase
 from tests.support.prerequisites import docker_available, privileged_lab_supported
 from tests.support.net_env import instantiate_with_mocked_kathara, ready_node_count
 
 
-class K8sLabUnitTest(unittest.TestCase):
+class K8sLabUnitTest:
     """Verify k8s_lab lab structure without Docker."""
 
     def _inst(self) -> K8sFatTreeBGP:
@@ -42,7 +21,8 @@ class K8sLabUnitTest(unittest.TestCase):
     def test_has_frr_routers(self) -> None:
         """k8s_lab must expose its FRR routers through the base-class routers list."""
         inst = self._inst()
-        self.assertTrue(len(inst.routers) > 0, "Expected at least one FRR router")
+
+        assert len(inst.routers) > 0, "Expected at least one FRR router"
         expected_routers = {
             "leaf_1_1",
             "leaf_1_2",
@@ -58,7 +38,8 @@ class K8sLabUnitTest(unittest.TestCase):
             "as1r1",
             "as2r1",
         }
-        self.assertEqual(set(inst.routers), expected_routers)
+
+        assert set(inst.routers) == expected_routers
 
     def test_has_kubernetes_nodes(self) -> None:
         """k8s_lab must classify k3s machines into kubernetes_nodes."""
@@ -71,43 +52,45 @@ class K8sLabUnitTest(unittest.TestCase):
             "worker4",
             "worker5",
         }
-        self.assertEqual(set(inst.kubernetes_nodes), expected_k8s)
+
+        assert set(inst.kubernetes_nodes) == expected_k8s
 
     def test_has_client_host(self) -> None:
         """k8s_lab must have the client node classified as a host."""
         inst = self._inst()
-        self.assertIn("client", inst.hosts)
+
+        assert "client" in inst.hosts
 
     def test_as2r1_is_bridged(self) -> None:
         """as2r1 must be bridged to provide internet connectivity."""
         inst = self._inst()
-        self.assertTrue(inst.lab.machines["as2r1"].is_bridged())
+
+        assert inst.lab.machines["as2r1"].is_bridged()
 
     def test_k3s_nodes_are_privileged(self) -> None:
         """k3s nodes must run in privileged mode."""
         inst = self._inst()
         for node_name in inst.kubernetes_nodes:
             machine = inst.lab.machines[node_name]
-            self.assertTrue(
-                machine.is_privileged(),
-                f"Expected {node_name} to be privileged but it is not",
+
+            assert machine.is_privileged(), (
+                f"Expected {node_name} to be privileged but it is not"
             )
 
 
-@unittest.skipUnless(
-    docker_available() and privileged_lab_supported(),
-    "Requires Docker and root (privileged k3s containers)",
+@pytest.mark.skipif(
+    not (docker_available() and privileged_lab_supported()),
+    reason="Requires Docker and root (privileged k3s containers)",
 )
 class K8sLabIntegrationTest(SharedSessionTestCase):
     """End-to-end checks for k8s_lab after deploy and controller.startup."""
 
     SCENARIO = K8sFatTreeBGP.LAB_NAME
     _READY_TIMEOUT_SEC = 900
-
     _api: KatharaBaseAPI
 
-    @classmethod
-    def setUpClass(cls) -> None:
+    @pytest.fixture(scope="class", autouse=True)
+    def _setup_class(cls) -> None:
         super().setUpClass()
         cls._api = KatharaBaseAPI(lab_name=cls._lab_name())
         cls._wait_until_ready()
@@ -137,18 +120,15 @@ class K8sLabIntegrationTest(SharedSessionTestCase):
                     last_error = f"k3s nodes not ready ({ready_nodes}/6)"
                     time.sleep(15)
                     continue
-
                 ingress = cls._exec(
                     "controller",
-                    "kubectl get svc -n ingress-nginx ingress-nginx-controller "
-                    "-o jsonpath={.status.loadBalancer.ingress[0].ip}",
+                    "kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath={.status.loadBalancer.ingress[0].ip}",
                     timeout=60,
                 ).strip()
                 if not ingress.startswith("101."):
                     last_error = f"ingress VIP missing (got {ingress!r})"
                     time.sleep(15)
                     continue
-
                 code = cls._exec(
                     "client",
                     "curl -s -o /dev/null -w '%{http_code}' http://datacenter.com/word",
@@ -159,7 +139,7 @@ class K8sLabIntegrationTest(SharedSessionTestCase):
                     time.sleep(15)
                     continue
                 return
-            except Exception as exc:  # noqa: BLE001 - poll until deadline
+            except Exception as exc:
                 last_error = str(exc)
                 time.sleep(15)
         raise TimeoutError(
@@ -169,36 +149,42 @@ class K8sLabIntegrationTest(SharedSessionTestCase):
     def test_bgp_spine_neighbors_up(self) -> None:
         """Pod-1 leaf routers must peer with spine routers (AS 64514)."""
         output = self._exec("leaf_1_1", "vtysh -c 'show bgp summary'")
-        self.assertIn("64514", output)
-        self.assertRegex(output, r"eth[01]\s+4\s+64514\s+\d+\s+\d+\s+\d+")
+
+        assert "64514" in output
+
+        assert re.search("eth[01]\\s+4\\s+64514\\s+\\d+\\s+\\d+\\s+\\d+", output)
 
     def test_metallb_route_on_leaf(self) -> None:
         """MetalLB VIP must be reachable in the leaf routing table via BGP."""
         output = self._exec("leaf_1_1", "vtysh -c 'show ip route'")
-        self.assertRegex(output, r"101\.0\.0\.1/32")
+
+        assert re.search("101\\.0\\.0\\.1/32", output)
 
     def test_k3s_cluster_ready(self) -> None:
         """All six k3s nodes must report Ready."""
         output = self._exec("controller", "kubectl get nodes --no-headers")
-        self.assertEqual(ready_node_count(output), 6, output)
+
+        assert ready_node_count(output) == 6, output
 
     def test_ingress_loadbalancer_vip(self) -> None:
         """Ingress controller must receive a MetalLB IP in 101.0.0.0/8."""
         output = self._exec(
-            "controller",
-            "kubectl get svc -n ingress-nginx ingress-nginx-controller",
+            "controller", "kubectl get svc -n ingress-nginx ingress-nginx-controller"
         )
-        self.assertRegex(output, r"101\.\d+\.\d+\.\d+")
+
+        assert re.search("101\\.\\d+\\.\\d+\\.\\d+", output)
 
     def test_cross_leaf_reachability(self) -> None:
         """Controller (leaf_1_1) must reach worker3 (leaf_1_2)."""
         output = self._exec("controller", "ping -c 3 201.2.1.2")
-        self.assertIn("3 packets received", output)
+
+        assert "3 packets received" in output
 
     def test_client_reaches_controller(self) -> None:
         """External client must reach the k3s controller host IP."""
         output = self._exec("client", "ping -c 3 201.1.1.2")
-        self.assertIn("3 received", output)
+
+        assert "3 received" in output
 
     def test_client_word_app_http(self) -> None:
         """Client must reach the word app through ingress."""
@@ -206,7 +192,8 @@ class K8sLabIntegrationTest(SharedSessionTestCase):
             "client",
             "curl -s -o /dev/null -w '%{http_code}' http://datacenter.com/word",
         ).strip()
-        self.assertEqual(code, "200")
+
+        assert code == "200"
 
     def test_client_weather_app_http(self) -> None:
         """Client must reach the weather app through ingress."""
@@ -214,13 +201,10 @@ class K8sLabIntegrationTest(SharedSessionTestCase):
             "client",
             "curl -s -o /dev/null -w '%{http_code}' 'http://datacenter.com/weather?location=London'",
         ).strip()
-        self.assertEqual(code, "200")
+
+        assert code == "200"
         body = self._exec(
-            "client",
-            "curl -s 'http://datacenter.com/weather?location=London'",
+            "client", "curl -s 'http://datacenter.com/weather?location=London'"
         )
-        self.assertIn("London", body)
 
-
-if __name__ == "__main__":
-    unittest.main()
+        assert "London" in body

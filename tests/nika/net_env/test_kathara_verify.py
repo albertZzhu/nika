@@ -1,9 +1,6 @@
-"""Unit and integration tests for Kathara scenario startup verification."""
-
 from __future__ import annotations
 
-import unittest
-
+import pytest
 from nika.net_env.kathara.data_center_routing.dc_clos_bgp.verify import (
     verify_dc_clos_bgp_lab,
     verify_dc_clos_service_lab,
@@ -11,36 +8,18 @@ from nika.net_env.kathara.data_center_routing.dc_clos_bgp.verify import (
 from nika.net_env.kathara.interdomain_routing.simple_bgp.verify import (
     verify_simple_bgp_lab,
 )
-from nika.net_env.kathara.intradomain_routing.rip_vpn.verify import (
-    verify_rip_vpn_lab,
-)
-from nika.net_env.kathara.kubernetes.k8s_lab.verify import (
-    verify_k8s_lab,
-)
-from nika.net_env.kathara.kubernetes.llmd_lab.verify import (
-    verify_llmd_lab,
-)
-from nika.net_env.kathara.p4.p4_bloom_filter.verify import (
-    verify_p4_bloom_filter_lab,
-)
-from nika.net_env.kathara.p4.p4_counter.verify import (
-    verify_p4_counter_lab,
-)
-from nika.net_env.kathara.p4.p4_int.verify import (
-    verify_p4_int_lab,
-)
-from nika.net_env.kathara.p4.p4_mpls.verify import (
-    verify_p4_mpls_lab,
-)
-from nika.net_env.kathara.sdn.verify import (
-    verify_sdn_clos_lab,
-    verify_sdn_star_lab,
-)
+from nika.net_env.kathara.intradomain_routing.rip_vpn.verify import verify_rip_vpn_lab
+from nika.net_env.kathara.kubernetes.k8s_lab.verify import verify_k8s_lab
+from nika.net_env.kathara.kubernetes.llmd_lab.verify import verify_llmd_lab
+from nika.net_env.kathara.p4.p4_bloom_filter.verify import verify_p4_bloom_filter_lab
+from nika.net_env.kathara.p4.p4_counter.verify import verify_p4_counter_lab
+from nika.net_env.kathara.p4.p4_int.verify import verify_p4_int_lab
+from nika.net_env.kathara.p4.p4_mpls.verify import verify_p4_mpls_lab
+from nika.net_env.kathara.sdn.verify import verify_sdn_clos_lab, verify_sdn_star_lab
 from nika.runtime.factory import resolve_backend, runtime_for_session
 from tests.support.integration_base import IntegrationTestCase
 from tests.support.prerequisites import docker_available
 from tests.support.net_env import assert_verify_success
-
 
 ALL_NODES = {
     "router1",
@@ -93,8 +72,6 @@ ALL_NODES = {
     "client",
     "leaf_1_1",
 }
-
-
 HOST_ADDRS = {
     "pc1": ("195.11.14.2", "10.0.0.1", "10.1.1.2", "10.0.0.2"),
     "pc2": ("200.1.1.2", "10.0.0.2", "10.7.2.2", "10.0.1.2"),
@@ -125,7 +102,7 @@ class FakeRuntime:
 
     def exec(self, host: str, command: str, timeout: float = 10.0) -> str:
         if (host, command) in self.overrides:
-            return self.overrides[(host, command)]
+            return self.overrides[host, command]
         if command.startswith("ping -c 3"):
             return "3 packets received"
         if command.startswith("ping -c 1"):
@@ -133,15 +110,12 @@ class FakeRuntime:
         if command.startswith("cat /sys/class/net/"):
             return "up"
         if command.startswith("ip -4 -o addr show"):
-            return "\n".join(f"inet {addr}/24" for addr in HOST_ADDRS.get(host, ()))
+            return "\n".join((f"inet {addr}/24" for addr in HOST_ADDRS.get(host, ())))
         if command == "ip route show default":
             return "default via 195.11.14.1 via 10.0.0.1"
         if command == "systemctl is-active frr":
             return "active"
-        if command in {
-            "systemctl is-active named",
-            "systemctl is-active apache2",
-        }:
+        if command in {"systemctl is-active named", "systemctl is-active apache2"}:
             return "active"
         if command == "pgrep -x simple_switch":
             return "123"
@@ -157,7 +131,7 @@ class FakeRuntime:
             return "200"
         if command == "kubectl get nodes --no-headers":
             return "\n".join(
-                f"node{idx} Ready control-plane 1m v1.0" for idx in range(6)
+                (f"node{idx} Ready control-plane 1m v1.0" for idx in range(6))
             )
         if "jsonpath={.status.loadBalancer.ingress[0].ip}" in command:
             return "101.0.0.1"
@@ -168,64 +142,68 @@ class FakeRuntime:
         return ""
 
 
-class KatharaVerifyUnitTest(unittest.TestCase):
+class KatharaVerifyUnitTest:
     def assert_verified(self, result: dict) -> None:
-        assert_verify_success(self, result)
+        assert_verify_success(result)
 
     def test_simple_bgp_verify_passes(self) -> None:
-        self.assert_verified(verify_simple_bgp_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_simple_bgp_lab(FakeRuntime(), scenario_name="x"))
 
     def test_dc_clos_bgp_verify_passes(self) -> None:
-        self.assert_verified(verify_dc_clos_bgp_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_dc_clos_bgp_lab(FakeRuntime(), scenario_name="x"))
 
     def test_dc_clos_service_verify_passes(self) -> None:
-        self.assert_verified(
+        assert_verify_success(
             verify_dc_clos_service_lab(FakeRuntime(), scenario_name="x")
         )
 
     def test_rip_vpn_verify_passes(self) -> None:
-        self.assert_verified(verify_rip_vpn_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_rip_vpn_lab(FakeRuntime(), scenario_name="x"))
 
     def test_sdn_star_verify_passes(self) -> None:
-        self.assert_verified(verify_sdn_star_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_sdn_star_lab(FakeRuntime(), scenario_name="x"))
 
     def test_sdn_clos_verify_passes(self) -> None:
-        self.assert_verified(verify_sdn_clos_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_sdn_clos_lab(FakeRuntime(), scenario_name="x"))
 
     def test_p4_bloom_filter_verify_passes(self) -> None:
-        self.assert_verified(
+        assert_verify_success(
             verify_p4_bloom_filter_lab(FakeRuntime(), scenario_name="x")
         )
 
     def test_p4_counter_verify_passes(self) -> None:
-        self.assert_verified(verify_p4_counter_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_p4_counter_lab(FakeRuntime(), scenario_name="x"))
 
     def test_p4_int_verify_passes(self) -> None:
-        self.assert_verified(verify_p4_int_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_p4_int_lab(FakeRuntime(), scenario_name="x"))
 
     def test_p4_mpls_verify_passes(self) -> None:
-        self.assert_verified(verify_p4_mpls_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_p4_mpls_lab(FakeRuntime(), scenario_name="x"))
 
     def test_k8s_verify_passes(self) -> None:
-        self.assert_verified(verify_k8s_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_k8s_lab(FakeRuntime(), scenario_name="x"))
 
     def test_llmd_verify_passes(self) -> None:
-        self.assert_verified(verify_llmd_lab(FakeRuntime(), scenario_name="x"))
+        assert_verify_success(verify_llmd_lab(FakeRuntime(), scenario_name="x"))
 
     def test_missing_node_fails(self) -> None:
         result = verify_simple_bgp_lab(
             FakeRuntime(nodes=ALL_NODES - {"pc2"}), scenario_name="x"
         )
-        self.assertFalse(result["verified"])
-        self.assertFalse(result["checks"]["nodes_deployed"])
+
+        assert not result["verified"]
+
+        assert not result["checks"]["nodes_deployed"]
 
     def test_p4_process_failure_fails(self) -> None:
         result = verify_p4_bloom_filter_lab(
             FakeRuntime(overrides={("switch_1", "pgrep -x simple_switch"): ""}),
             scenario_name="x",
         )
-        self.assertFalse(result["verified"])
-        self.assertFalse(result["checks"]["p4_switches_ready"])
+
+        assert not result["verified"]
+
+        assert not result["checks"]["p4_switches_ready"]
 
     def test_k8s_not_ready_fails(self) -> None:
         result = verify_k8s_lab(
@@ -234,8 +212,10 @@ class KatharaVerifyUnitTest(unittest.TestCase):
             ),
             scenario_name="x",
         )
-        self.assertFalse(result["verified"])
-        self.assertFalse(result["checks"]["k3s_nodes_ready"])
+
+        assert not result["verified"]
+
+        assert not result["checks"]["k3s_nodes_ready"]
 
 
 SCENARIO_CASES: tuple[tuple[str, list[str], tuple[str, ...]], ...] = (
@@ -285,29 +265,21 @@ SCENARIO_CASES: tuple[tuple[str, list[str], tuple[str, ...]], ...] = (
     ("p4_bloom_filter", [], ("pc1", "pc2", "switch_1", "switch_2")),
     ("p4_counter", [], ("pc1", "pc2", "pc3", "s1", "s2", "s3", "s4")),
     ("p4_int", [], ("pc1", "pc2", "collector", "leaf1", "leaf2", "spine1", "spine2")),
-    (
-        "p4_mpls",
-        [],
-        ("pc1", "pc2", "pc3", "switch_1", "switch_4", "switch_7"),
-    ),
+    ("p4_mpls", [], ("pc1", "pc2", "pc3", "switch_1", "switch_4", "switch_7")),
 )
 
 
-@unittest.skipUnless(docker_available(), "Docker not available")
+@pytest.mark.skipif(not docker_available(), reason="Docker not available")
 class KatharaScenarioVerifyIntegrationTest(IntegrationTestCase):
     def test_scenarios_start_and_verify(self) -> None:
         for scenario, args, expected_nodes in SCENARIO_CASES:
-            with self.subTest(scenario=scenario):
-                session_id = self._start_env(scenario, args)
-                try:
-                    row = self._assert_session_ready(session_id, scenario)
-                    self.assertEqual(resolve_backend(row), "kathara")
-                    nodes = set(runtime_for_session(row).list_nodes())
-                    for node in expected_nodes:
-                        self.assertIn(node, nodes)
-                finally:
-                    self._close_session(session_id)
+            session_id = self._start_env(scenario, args)
+            try:
+                row = self._assert_session_ready(session_id, scenario)
 
-
-if __name__ == "__main__":
-    unittest.main()
+                assert resolve_backend(row) == "kathara"
+                nodes = set(runtime_for_session(row).list_nodes())
+                for node in expected_nodes:
+                    assert node in nodes
+            finally:
+                self._close_session(session_id)

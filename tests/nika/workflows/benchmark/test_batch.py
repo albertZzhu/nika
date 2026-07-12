@@ -1,26 +1,13 @@
-"""Parallel benchmark integration test via --batch-size.
-
-Verifies that ``nika benchmark run --batch-size N`` runs N YAML rows simultaneously,
-each using the mock agent for Diagnosis, followed by per-session eval—all without
-cross-contamination between sessions.
-
-Prerequisites:
-  - Docker must be running
-  - Run via: uv run python -m unittest tests.nika.workflows.benchmark.test_batch -v
-"""
-
 from __future__ import annotations
 
+import pytest
 import json
 import re
 import subprocess
 import tempfile
-import unittest
 from pathlib import Path
 from typing import NamedTuple
-
 import yaml
-
 from agent.utils.phases import DIAGNOSIS, SUBMISSION
 from nika.utils.session_id import resolve_session_tag, session_id_pattern
 from nika.utils.session_store import SESSIONS_DIR, SessionStore
@@ -28,10 +15,9 @@ from tests.nika.workflows.benchmark.helpers import inject_params_from_benchmark_
 from tests.support.integration_base import IntegrationTestCase
 
 TEST_SESSION_ID_RE = session_id_pattern("test")
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BENCHMARK_DONE_RE = re.compile(
-    r"benchmark_done session_id=(\S+) scenario=(\S+) problem=(\S+) session_dir=(\S+)"
+    "benchmark_done session_id=(\\S+) scenario=(\\S+) problem=(\\S+) session_dir=(\\S+)"
 )
 
 
@@ -64,15 +50,11 @@ class ParallelBenchmarkIntegrationTest(IntegrationTestCase):
 
     _pipeline_results: dict[str, tuple[str, Path] | BaseException]
 
-    @classmethod
-    def setUpClass(cls) -> None:
+    @pytest.fixture(scope="class", autouse=True)
+    def _setup_class(cls) -> None:
         cls._pipeline_results = {}
-
         with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".yaml",
-            delete=False,
-            encoding="utf-8",
+            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
         ) as handle:
             cases = []
             for case in SCENARIO_CASES:
@@ -81,15 +63,12 @@ class ParallelBenchmarkIntegrationTest(IntegrationTestCase):
                     "problem": case.problem,
                     "topo_size": case.size,
                     "inject": inject_params_from_benchmark_yaml(
-                        case.scenario,
-                        case.problem,
-                        case.size or "",
+                        case.scenario, case.problem, case.size or ""
                     ),
                 }
                 cases.append(row)
             yaml.dump({"cases": cases}, handle, sort_keys=False, allow_unicode=True)
             yaml_path = handle.name
-
         try:
             proc = subprocess.run(
                 [
@@ -120,15 +99,12 @@ class ParallelBenchmarkIntegrationTest(IntegrationTestCase):
                 output += proc.stderr
             if proc.returncode != 0:
                 raise RuntimeError(
-                    f"`nika benchmark run --batch-size {len(SCENARIO_CASES)}` "
-                    f"exited {proc.returncode}:\n{output}"
+                    f"`nika benchmark run --batch-size {len(SCENARIO_CASES)}` exited {proc.returncode}:\n{output}"
                 )
-
             parsed: dict[str, tuple[str, Path]] = {}
             for match in _BENCHMARK_DONE_RE.finditer(output):
                 session_id, scenario, problem, session_dir = match.groups()
                 parsed[f"{scenario}:{problem}"] = (session_id, Path(session_dir))
-
             for case in SCENARIO_CASES:
                 key = _case_key(case)
                 if key not in parsed:
@@ -143,13 +119,15 @@ class ParallelBenchmarkIntegrationTest(IntegrationTestCase):
     def _result(self, case: ScenarioCase) -> tuple[str, Path]:
         result = self._pipeline_results.get(_case_key(case))
         if isinstance(result, BaseException):
-            self.fail(f"Pipeline for {_case_key(case)} raised: {result}")
-        self.assertIsNotNone(result, f"No result recorded for {_case_key(case)}")
-        return result  # type: ignore[return-value]
+            raise AssertionError(f"Pipeline for {_case_key(case)} raised: {result}")
+
+        assert result is not None
+        return result
 
     def _load_json(self, session_dir: Path, filename: str) -> dict:
         path = session_dir / filename
-        self.assertTrue(path.exists(), f"{filename} missing in {session_dir}")
+
+        assert path.exists(), f"{filename} missing in {session_dir}"
         return json.loads(path.read_text(encoding="utf-8"))
 
     def test_session_ids_are_unique(self) -> None:
@@ -158,9 +136,10 @@ class ParallelBenchmarkIntegrationTest(IntegrationTestCase):
             for c in SCENARIO_CASES
             if not isinstance(self._pipeline_results.get(_case_key(c)), BaseException)
         ]
-        self.assertEqual(len(ids), len(set(ids)), f"Duplicate session IDs: {ids}")
+
+        assert len(ids) == len(set(ids)), f"Duplicate session IDs: {ids}"
         for session_id in ids:
-            self.assertRegex(session_id, TEST_SESSION_ID_RE)
+            assert re.search(TEST_SESSION_ID_RE, session_id)
 
     def test_session_dirs_are_isolated(self) -> None:
         dirs = [
@@ -168,42 +147,45 @@ class ParallelBenchmarkIntegrationTest(IntegrationTestCase):
             for c in SCENARIO_CASES
             if not isinstance(self._pipeline_results.get(_case_key(c)), BaseException)
         ]
-        self.assertEqual(len(dirs), len(set(dirs)), f"Overlapping session dirs: {dirs}")
+
+        assert len(dirs) == len(set(dirs)), f"Overlapping session dirs: {dirs}"
 
     def test_ground_truth_correctness(self) -> None:
         for case in SCENARIO_CASES:
-            with self.subTest(scenario=case.scenario, problem=case.problem):
-                _, session_dir = self._result(case)
-                gt = self._load_json(session_dir, "ground_truth.json")
-                self.assertTrue(gt["is_anomaly"])
-                self.assertIn(case.problem, gt["root_cause_name"])
+            _, session_dir = self._result(case)
+            gt = self._load_json(session_dir, "ground_truth.json")
+
+            assert gt["is_anomaly"]
+
+            assert case.problem in gt["root_cause_name"]
 
     def test_run_json_correctness(self) -> None:
         for case in SCENARIO_CASES:
-            with self.subTest(scenario=case.scenario, problem=case.problem):
-                session_id, session_dir = self._result(case)
-                run = self._load_json(session_dir, "run.json")
-                self.assertEqual(run["session_id"], session_id)
-                self.assertEqual(run["scenario_name"], case.scenario)
-                self.assertEqual(run["agent_type"], "mock")
-                self.assertEqual(run["status"], "finished")
+            session_id, session_dir = self._result(case)
+            run = self._load_json(session_dir, "run.json")
+
+            assert run["session_id"] == session_id
+
+            assert run["scenario_name"] == case.scenario
+
+            assert run["agent_type"] == "mock"
+
+            assert run["status"] == "finished"
 
     def test_session_dir_path_contains_session_id(self) -> None:
         for case in SCENARIO_CASES:
-            with self.subTest(scenario=case.scenario, problem=case.problem):
-                session_id, session_dir = self._result(case)
-                self.assertIn(session_id, str(session_dir))
+            session_id, session_dir = self._result(case)
+
+            assert session_id in str(session_dir)
 
     def test_submission_fields_and_isolation(self) -> None:
         for case in SCENARIO_CASES:
-            with self.subTest(scenario=case.scenario, problem=case.problem):
-                session_id, session_dir = self._result(case)
-                sub = self._load_json(session_dir, "submission.json")
-                for field in ("is_anomaly", "faulty_devices", "root_cause_name"):
-                    self.assertIn(
-                        field, sub, f"Missing field '{field}' in submission.json"
-                    )
-                self.assertIn(session_id, str(session_dir))
+            session_id, session_dir = self._result(case)
+            sub = self._load_json(session_dir, "submission.json")
+            for field in ("is_anomaly", "faulty_devices", "root_cause_name"):
+                assert field in sub, f"Missing field '{field}' in submission.json"
+
+            assert session_id in str(session_dir)
 
     def test_eval_metrics_fields_and_scores(self) -> None:
         required_fields = (
@@ -215,54 +197,52 @@ class ParallelBenchmarkIntegrationTest(IntegrationTestCase):
             "tool_calls",
         )
         for case in SCENARIO_CASES:
-            with self.subTest(scenario=case.scenario, problem=case.problem):
-                _, session_dir = self._result(case)
-                metrics = self._load_json(session_dir, "eval_metrics.json")
-                for field in required_fields:
-                    self.assertIn(
-                        field, metrics, f"Missing field '{field}' in eval_metrics.json"
-                    )
-                self.assertEqual(metrics["detection_score"], 1.0)
-                self.assertEqual(metrics["rca_accuracy"], 1.0)
-                self.assertGreater(metrics["tool_calls"], 0)
-                self.assertFalse((session_dir / "llm_judge.json").exists())
+            _, session_dir = self._result(case)
+            metrics = self._load_json(session_dir, "eval_metrics.json")
+            for field in required_fields:
+                assert field in metrics, f"Missing field '{field}' in eval_metrics.json"
+
+            assert metrics["detection_score"] == 1.0
+
+            assert metrics["rca_accuracy"] == 1.0
+
+            assert metrics["tool_calls"] > 0
+
+            assert not (session_dir / "llm_judge.json").exists()
 
     def test_messages_trace_has_expected_tool_calls(self) -> None:
         for case in SCENARIO_CASES:
-            with self.subTest(scenario=case.scenario, problem=case.problem):
-                _, session_dir = self._result(case)
-                trace_path = session_dir / "messages.jsonl"
-                self.assertTrue(trace_path.exists(), "messages.jsonl missing")
+            _, session_dir = self._result(case)
+            trace_path = session_dir / "messages.jsonl"
 
-                events = [
-                    json.loads(line)
-                    for line in trace_path.read_text(encoding="utf-8").splitlines()
-                    if line.strip()
-                ]
-                agents_seen = {e["agent"] for e in events}
-                self.assertIn(DIAGNOSIS, agents_seen)
-                self.assertIn(SUBMISSION, agents_seen)
+            assert trace_path.exists(), "messages.jsonl missing"
+            events = [
+                json.loads(line)
+                for line in trace_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            agents_seen = {e["agent"] for e in events}
 
-                tool_names_seen = {
-                    e["tool"]["name"]
-                    for e in events
-                    if e.get("event") == "tool_start" and "tool" in e
-                }
-                self.assertIn("list_avail_problems", tool_names_seen)
-                self.assertIn("submit", tool_names_seen)
+            assert DIAGNOSIS in agents_seen
+
+            assert SUBMISSION in agents_seen
+            tool_names_seen = {
+                e["tool"]["name"]
+                for e in events
+                if e.get("event") == "tool_start" and "tool" in e
+            }
+
+            assert "list_avail_problems" in tool_names_seen
+
+            assert "submit" in tool_names_seen
 
     def test_runtime_session_files_cleared_after_close(self) -> None:
         for case in SCENARIO_CASES:
-            with self.subTest(scenario=case.scenario, problem=case.problem):
-                session_id, _ = self._result(case)
-                runtime_path = Path(SESSIONS_DIR) / f"{session_id}.json"
-                self.assertFalse(
-                    runtime_path.exists(),
-                    f"Runtime session file was not removed after undeploy: {runtime_path}",
-                )
-                with self.assertRaises(FileNotFoundError):
-                    SessionStore().get_session(session_id)
+            session_id, _ = self._result(case)
+            runtime_path = Path(SESSIONS_DIR) / f"{session_id}.json"
 
-
-if __name__ == "__main__":
-    unittest.main()
+            assert not runtime_path.exists(), (
+                f"Runtime session file was not removed after undeploy: {runtime_path}"
+            )
+            with pytest.raises(FileNotFoundError):
+                SessionStore().get_session(session_id)

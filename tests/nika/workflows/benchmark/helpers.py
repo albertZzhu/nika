@@ -1,5 +1,3 @@
-"""Shared helpers for benchmark-related tests."""
-
 from __future__ import annotations
 
 from nika.config import BENCHMARK_DIR

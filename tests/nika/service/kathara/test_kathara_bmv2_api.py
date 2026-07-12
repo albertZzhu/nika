@@ -1,15 +1,6 @@
-"""Kathara BMv2 API smoke tests on ``p4_counter``.
-
-Exercises P4 switch Thrift helpers and host discovery for BMv2 nodes.
-
-Run:
-  uv run python -m unittest tests.nika.service.kathara.test_kathara_bmv2_api -v
-"""
-
 from __future__ import annotations
 
-import unittest
-
+import pytest
 from nika.runtime.factory import resolve_backend
 from nika.service.kathara.bmv2_api import KatharaBMv2API
 from tests.support.prerequisites import docker_available
@@ -22,7 +13,7 @@ EGRESS_COUNTER = "egress_port_counter"
 EXPECTED_SWITCHES = ("s1", "s2", "s3", "s4")
 
 
-@unittest.skipUnless(docker_available(), "Docker not available")
+@pytest.mark.skipif(not docker_available(), reason="Docker not available")
 class KatharaBmv2ApiSmokeTest(KatharaScenarioApiSmokeTest):
     SCENARIO = "p4_counter"
 
@@ -31,18 +22,19 @@ class KatharaBmv2ApiSmokeTest(KatharaScenarioApiSmokeTest):
 
     def test_session_backend(self) -> None:
         row = self._session_row(self.session_id)
-        self.assertEqual(resolve_backend(row), "kathara")
+
+        assert resolve_backend(row) == "kathara"
 
     def test_kathara_bmv2_discovery(self) -> None:
         api = self._host_api()
         switches = self.smoke(
-            "KatharaBaseAPI.get_bmv2_switches",
-            api.get_bmv2_switches,
-            expect_type=list,
+            "KatharaBaseAPI.get_bmv2_switches", api.get_bmv2_switches, expect_type=list
         )
-        self.assertEqual(set(switches), set(EXPECTED_SWITCHES))
+
+        assert set(switches) == set(EXPECTED_SWITCHES)
         self.smoke("KatharaBaseAPI.load_machines", api.load_machines)
-        self.assertEqual(set(api.bmv2_switches), set(EXPECTED_SWITCHES))
+
+        assert set(api.bmv2_switches) == set(EXPECTED_SWITCHES)
 
     def test_kathara_bmv2_switch_api(self) -> None:
         api = self._bmv2_api()
@@ -116,7 +108,3 @@ class KatharaBmv2ApiSmokeTest(KatharaScenarioApiSmokeTest):
             lambda: api.bmv2_get_register_arrays(SWITCH),
             min_len=1,
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

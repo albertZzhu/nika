@@ -1,17 +1,13 @@
-"""Integration tests for Containerlab CLI failure injection on min3clos."""
-
 from __future__ import annotations
 
+import pytest
 import shutil
-import unittest
 from typing import ClassVar
-
 from tests.support.integration_base import PerTestEnvTestCase
 
 HOST = "leaf1"
 INTF = "e1-1"
 LINK_PARAMS = {"host_name": HOST, "intf_name": INTF}
-
 MIN3CLOS_FAILURES = (
     "link_down",
     "link_detach",
@@ -28,7 +24,7 @@ MIN3CLOS_FAILURES = (
 )
 
 
-@unittest.skipUnless(shutil.which("clab"), "containerlab not installed")
+@pytest.mark.skipif(not shutil.which("clab"), reason="containerlab not installed")
 class ClabFailureInjectVerifyTest(PerTestEnvTestCase):
     SCENARIO = "min3clos"
     ENV_RUN_ARGS: ClassVar[list[str]] = []
@@ -73,7 +69,3 @@ class ClabFailureInjectVerifyTest(PerTestEnvTestCase):
 
     def test_bgp_hijacking(self) -> None:
         self._inject_and_assert("bgp_hijacking")
-
-
-if __name__ == "__main__":
-    unittest.main()

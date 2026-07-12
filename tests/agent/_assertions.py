@@ -1,23 +1,19 @@
-"""Shared assertions for agent pipeline integration tests."""
-
 from __future__ import annotations
 
 import json
-import unittest
 from pathlib import Path
 
 from agent.utils.phases import DIAGNOSIS, SUBMISSION
 
 
 def assert_phase_messages(
-    testcase: unittest.TestCase,
     messages: list[dict],
     *,
     require_diagnosis_tools: bool = True,
 ) -> None:
     agents = {e["agent"] for e in messages}
-    testcase.assertIn(DIAGNOSIS, agents)
-    testcase.assertIn(SUBMISSION, agents)
+    assert DIAGNOSIS in agents
+    assert SUBMISSION in agents
 
     if require_diagnosis_tools:
         diag_tools = [
@@ -26,9 +22,7 @@ def assert_phase_messages(
             if e["agent"] == DIAGNOSIS
             for name in _extract_tool_names(e)
         ]
-        testcase.assertTrue(
-            diag_tools, "diagnosis phase must call at least one MCP tool"
-        )
+        assert diag_tools, "diagnosis phase must call at least one MCP tool"
 
     sub_tools = [
         name
@@ -36,16 +30,14 @@ def assert_phase_messages(
         if e["agent"] == SUBMISSION
         for name in _extract_tool_names(e)
     ]
-    testcase.assertTrue(
-        any("list_avail_problems" in name for name in sub_tools), sub_tools
-    )
-    testcase.assertTrue(any("submit" in name for name in sub_tools), sub_tools)
+    assert any("list_avail_problems" in name for name in sub_tools), sub_tools
+    assert any("submit" in name for name in sub_tools), sub_tools
 
 
-def assert_submission_fields(testcase: unittest.TestCase, session_dir: Path) -> None:
+def assert_submission_fields(session_dir: Path) -> None:
     submission = json.loads((session_dir / "submission.json").read_text())
     for field in ("is_anomaly", "faulty_devices", "root_cause_name"):
-        testcase.assertIn(field, submission)
+        assert field in submission
 
 
 def _extract_tool_names(entry: dict) -> list[str]:
@@ -130,20 +122,15 @@ def marker_before_first_mcp_tool(
 
 
 def assert_skill_invoked(
-    testcase: unittest.TestCase,
     messages: list[dict],
     skill_name: str = "nika-test-skill",
 ) -> None:
     invoked = skill_invoked(messages, skill_name=skill_name)
     workflow = marker_before_first_mcp_tool(messages)
-    testcase.assertTrue(
-        invoked or workflow,
-        f"expected skill {skill_name!r} to be invoked or its marker-first workflow followed",
+    assert invoked or workflow, (
+        f"expected skill {skill_name!r} to be invoked or its marker-first workflow followed"
     )
-    testcase.assertTrue(
-        workflow,
-        "expected NIKA_TEST_SKILL_ACTIVE before the first MCP tool call",
-    )
+    assert workflow, "expected NIKA_TEST_SKILL_ACTIVE before the first MCP tool call"
 
 
 def reachability_called_before_submit(messages: list[dict]) -> bool:

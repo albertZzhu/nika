@@ -1,17 +1,7 @@
-"""Kathara API smoke tests on ``ospf_enterprise_static`` (small topology).
-
-Exercises OSPF FRR parsers, DNS lookup, and HTTP curl helpers that need a
-multi-tier enterprise lab rather than ``simple_bgp``.
-
-Run:
-  uv run python -m unittest tests.nika.service.kathara.test_kathara_ospf_api -v
-"""
-
 from __future__ import annotations
 
-import unittest
+import pytest
 from typing import ClassVar
-
 from nika.net_env.kathara.intradomain_routing.ospf_enterprise.verify import (
     CORE_ROUTER,
     DNS_SERVER,
@@ -28,23 +18,23 @@ ROUTER = CORE_ROUTER
 INTF = "eth0"
 
 
-@unittest.skipUnless(docker_available(), "Docker not available")
+@pytest.mark.skipif(not docker_available(), reason="Docker not available")
 class KatharaOspfApiSmokeTest(KatharaScenarioApiSmokeTest):
     SCENARIO = "ospf_enterprise_static"
     ENV_RUN_ARGS: ClassVar[list[str]] = ["-s", "s"]
 
     def test_session_backend(self) -> None:
         row = self._session_row(self.session_id)
-        self.assertEqual(resolve_backend(row), "kathara")
+
+        assert resolve_backend(row) == "kathara"
 
     def test_runtime_ospf_semantic_apis(self) -> None:
         runtime = self._runtime()
-        self.assertTrue(
-            self.smoke(
-                "runtime.process_running(ospfd)",
-                lambda: runtime.process_running(ROUTER, "ospfd"),
-                expect_type=bool,
-            )
+
+        assert self.smoke(
+            "runtime.process_running(ospfd)",
+            lambda: runtime.process_running(ROUTER, "ospfd"),
+            expect_type=bool,
         )
         self.smoke(
             "runtime.dig_query(web0.local)",
@@ -64,7 +54,8 @@ class KatharaOspfApiSmokeTest(KatharaScenarioApiSmokeTest):
             lambda: api.frr_get_ospf_neighbors(ROUTER),
             min_len=1,
         )
-        self.assertIn("Full", neighbors)
+
+        assert "Full" in neighbors
         self.smoke(
             "KatharaFRRAPI.frr_get_ospf_routes",
             lambda: api.frr_get_ospf_routes(ROUTER),
@@ -93,7 +84,8 @@ class KatharaOspfApiSmokeTest(KatharaScenarioApiSmokeTest):
             lambda: api.show_dns_config(HOST),
             min_len=1,
         )
-        self.assertIn("nameserver", dns_cfg.lower())
+
+        assert "nameserver" in dns_cfg.lower()
         self.smoke(
             "KatharaBaseAPI.curl_web_test(web0)",
             lambda: api.curl_web_test(HOST, WEB0_URL, times=1),
@@ -110,8 +102,5 @@ class KatharaOspfApiSmokeTest(KatharaScenarioApiSmokeTest):
             min_len=1,
         )
         hosts = self.smoke("KatharaBaseAPI.get_hosts", api.get_hosts, expect_type=list)
-        self.assertIn(HOST, hosts)
 
-
-if __name__ == "__main__":
-    unittest.main()
+        assert HOST in hosts

@@ -1,11 +1,8 @@
-"""Centralized unit tests for shared agent CLI/env configuration."""
-
 from __future__ import annotations
 
+import pytest
 import os
-import unittest
 import unittest.mock
-
 from nika.utils.agent_config import (
     ENV_AGENT_TYPE,
     ENV_AUTOGEN_MODEL,
@@ -33,7 +30,7 @@ from tests.support.integration_pipeline import load_test_env
 load_test_env()
 
 
-class AgentConfigTest(unittest.TestCase):
+class AgentConfigTest:
     def test_cli_values_override_env(self) -> None:
         with unittest.mock.patch.dict(
             os.environ,
@@ -45,31 +42,29 @@ class AgentConfigTest(unittest.TestCase):
             },
             clear=True,
         ):
-            self.assertEqual(resolve_agent_type("byo.langgraph"), "byo.langgraph")
-            self.assertEqual(
-                resolve_llm_provider("openai", agent_type="byo.langgraph"), "openai"
+            assert resolve_agent_type("byo.langgraph") == "byo.langgraph"
+            assert (
+                resolve_llm_provider("openai", agent_type="byo.langgraph") == "openai"
             )
-            self.assertEqual(resolve_max_steps(20), 20)
-            self.assertEqual(
-                resolve_agent_model("byo.langgraph", "override"), "override"
-            )
+            assert resolve_max_steps(20) == 20
+            assert resolve_agent_model("byo.langgraph", "override") == "override"
 
     def test_required_shared_values_raise_when_missing(self) -> None:
         with unittest.mock.patch.dict(os.environ, {}, clear=True):
-            for resolver in (resolve_agent_type, resolve_max_steps, resolve_judge_provider):
-                with self.subTest(resolver=resolver.__name__):
-                    with self.assertRaises(ValueError):
-                        resolver(None)
-
-            with self.assertRaises(ValueError):
+            for resolver in (
+                resolve_agent_type,
+                resolve_max_steps,
+                resolve_judge_provider,
+            ):
+                with pytest.raises(ValueError):
+                    resolver(None)
+            with pytest.raises(ValueError):
                 resolve_llm_provider(None, agent_type="byo.langgraph")
 
     def test_non_langgraph_agents_do_not_require_llm_provider(self) -> None:
         with unittest.mock.patch.dict(os.environ, {}, clear=True):
-            self.assertIsNone(resolve_llm_provider(None, agent_type="mock"))
-            self.assertIsNone(
-                resolve_llm_provider(None, agent_type="local_cli.codex_cli")
-            )
+            assert resolve_llm_provider(None, agent_type="mock") is None
+            assert resolve_llm_provider(None, agent_type="local_cli.codex_cli") is None
 
     def test_judge_values_from_env(self) -> None:
         with unittest.mock.patch.dict(
@@ -77,15 +72,15 @@ class AgentConfigTest(unittest.TestCase):
             {ENV_JUDGE_PROVIDER: "deepseek", ENV_JUDGE_MODEL: "deepseek-chat"},
             clear=True,
         ):
-            self.assertEqual(resolve_judge_provider(None), "deepseek")
-            self.assertEqual(resolve_judge_model(None), "deepseek-chat")
+            assert resolve_judge_provider(None) == "deepseek"
+            assert resolve_judge_model(None) == "deepseek-chat"
 
     def test_reasoning_effort_from_env(self) -> None:
         with unittest.mock.patch.dict(
             os.environ, {"NIKA_CODEX_REASONING_EFFORT": "medium"}, clear=True
         ):
-            self.assertEqual(resolve_reasoning_effort(None), "medium")
-            self.assertEqual(resolve_reasoning_effort("high"), "high")
+            assert resolve_reasoning_effort(None) == "medium"
+            assert resolve_reasoning_effort("high") == "high"
 
     def test_agent_specific_model_envs(self) -> None:
         cases = [
@@ -100,26 +95,12 @@ class AgentConfigTest(unittest.TestCase):
             ("community.sade", ENV_SADE_MODEL, "deepseek-v4-flash"),
         ]
         for agent_type, env_key, model in cases:
-            with self.subTest(agent_type=agent_type, env_key=env_key):
-                with unittest.mock.patch.dict(
-                    os.environ, {env_key: model}, clear=True
-                ):
-                    self.assertEqual(resolve_agent_model(agent_type, None), model)
+            with unittest.mock.patch.dict(os.environ, {env_key: model}, clear=True):
+                assert resolve_agent_model(agent_type, None) == model
 
     def test_claude_family_falls_back_to_anthropic_model(self) -> None:
-        for agent_type in (
-            "local_cli.claude_cli",
-            "sdk.claude_sdk",
-            "community.sade",
-        ):
-            with self.subTest(agent_type=agent_type):
-                with unittest.mock.patch.dict(
-                    os.environ, {"ANTHROPIC_MODEL": "deepseek-v4-pro[1m]"}, clear=True
-                ):
-                    self.assertEqual(
-                        resolve_agent_model(agent_type, None), "deepseek-v4-pro[1m]"
-                    )
-
-
-if __name__ == "__main__":
-    unittest.main()
+        for agent_type in ("local_cli.claude_cli", "sdk.claude_sdk", "community.sade"):
+            with unittest.mock.patch.dict(
+                os.environ, {"ANTHROPIC_MODEL": "deepseek-v4-pro[1m]"}, clear=True
+            ):
+                assert resolve_agent_model(agent_type, None) == "deepseek-v4-pro[1m]"

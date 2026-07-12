@@ -1,17 +1,7 @@
-"""Kathara API smoke tests on ``ospf_enterprise_dhcp`` (small topology).
-
-Exercises DHCP client discovery and DNS helpers that require the DHCP variant of
-the enterprise lab.
-
-Run:
-  uv run python -m unittest tests.nika.service.kathara.test_kathara_dhcp_api -v
-"""
-
 from __future__ import annotations
 
-import unittest
+import pytest
 from typing import ClassVar
-
 from nika.net_env.kathara.intradomain_routing.ospf_enterprise.verify import (
     DNS_SERVER,
     PROBE_HOST,
@@ -26,14 +16,15 @@ INTF = "eth0"
 DHCP_SERVER = "dhcp_server"
 
 
-@unittest.skipUnless(docker_available(), "Docker not available")
+@pytest.mark.skipif(not docker_available(), reason="Docker not available")
 class KatharaDhcpApiSmokeTest(KatharaScenarioApiSmokeTest):
     SCENARIO = "ospf_enterprise_dhcp"
     ENV_RUN_ARGS: ClassVar[list[str]] = ["-s", "s"]
 
     def test_session_backend(self) -> None:
         row = self._session_row(self.session_id)
-        self.assertEqual(resolve_backend(row), "kathara")
+
+        assert resolve_backend(row) == "kathara"
 
     def test_runtime_dhcp_semantic_apis(self) -> None:
         runtime = self._runtime()
@@ -42,7 +33,8 @@ class KatharaDhcpApiSmokeTest(KatharaScenarioApiSmokeTest):
             runtime.list_dhcp_client_nodes,
             expect_type=list,
         )
-        self.assertIn(HOST, clients)
+
+        assert HOST in clients
         self.smoke(
             "runtime.get_host_ip(dhcp client)",
             lambda: runtime.get_host_ip(HOST, INTF),
@@ -54,14 +46,13 @@ class KatharaDhcpApiSmokeTest(KatharaScenarioApiSmokeTest):
             lambda: runtime.dig_query(HOST, "web0.local"),
             min_len=1,
         )
-        self.assertTrue(
-            self.smoke(
-                "runtime.file_contains(dhcpd.conf)",
-                lambda: runtime.file_contains(
-                    DHCP_SERVER, "/etc/dhcp/dhcpd.conf", "subnet"
-                ),
-                expect_type=bool,
-            )
+
+        assert self.smoke(
+            "runtime.file_contains(dhcpd.conf)",
+            lambda: runtime.file_contains(
+                DHCP_SERVER, "/etc/dhcp/dhcpd.conf", "subnet"
+            ),
+            expect_type=bool,
         )
 
     def test_kathara_host_dhcp_dns_api(self) -> None:
@@ -71,7 +62,8 @@ class KatharaDhcpApiSmokeTest(KatharaScenarioApiSmokeTest):
             lambda: api.show_dns_config(HOST),
             min_len=1,
         )
-        self.assertIn("nameserver", dns_cfg.lower())
+
+        assert "nameserver" in dns_cfg.lower()
         self.smoke(
             "KatharaBaseAPI.curl_web_test(web0)",
             lambda: api.curl_web_test(HOST, WEB0_URL, times=1),
@@ -87,7 +79,3 @@ class KatharaDhcpApiSmokeTest(KatharaScenarioApiSmokeTest):
             lambda: api.systemctl_ops(DNS_SERVER, "named", "status"),
             min_len=1,
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -1,13 +1,10 @@
-"""Tests for the shared NIKA agent skill library."""
-
 from __future__ import annotations
 
+import pytest
 import os
 import tempfile
-import unittest
 import unittest.mock
 from pathlib import Path
-
 from agent.utils.skills import (
     ENV_ENABLE_SKILLS,
     ENV_SKILLS_DIR,
@@ -40,7 +37,6 @@ from tests.support.integration_pipeline import (
 )
 
 load_test_env()
-
 CODEX_MODEL = (
     os.environ.get(ENV_CODEX_SDK_MODEL, "").strip()
     or os.environ.get(ENV_CODEX_MODEL, "").strip()
@@ -48,10 +44,10 @@ CODEX_MODEL = (
 )
 
 
-class SkillsConfigTest(unittest.TestCase):
+class SkillsConfigTest:
     def test_resolve_skills_root_default(self) -> None:
         root = resolve_skills_root()
-        self.assertTrue((root / "skills" / "nika-test-skill" / "SKILL.md").is_file())
+        assert (root / "skills" / "nika-test-skill" / "SKILL.md").is_file()
 
     def test_resolve_skills_root_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -59,49 +55,48 @@ class SkillsConfigTest(unittest.TestCase):
             with unittest.mock.patch.dict(
                 os.environ, {ENV_SKILLS_DIR: str(override)}, clear=False
             ):
-                self.assertEqual(resolve_skills_root(), override.resolve())
+                assert resolve_skills_root() == override.resolve()
 
     def test_skills_enabled_default(self) -> None:
         with unittest.mock.patch.dict(os.environ, {}, clear=True):
-            self.assertTrue(skills_enabled())
+            assert skills_enabled()
 
     def test_skills_enabled_false(self) -> None:
         with unittest.mock.patch.dict(
             os.environ, {ENV_ENABLE_SKILLS: "false"}, clear=True
         ):
-            self.assertFalse(skills_enabled())
+            assert not skills_enabled()
 
     def test_claude_skills_package_dir_when_disabled(self) -> None:
         with unittest.mock.patch.dict(
             os.environ, {ENV_ENABLE_SKILLS: "false"}, clear=True
         ):
-            self.assertIsNone(claude_skills_package_dir())
+            assert claude_skills_package_dir() is None
 
     def test_claude_skills_package_dir_when_enabled(self) -> None:
         with unittest.mock.patch.dict(
             os.environ, {ENV_ENABLE_SKILLS: "true"}, clear=True
         ):
             package = claude_skills_package_dir()
-            self.assertIsNotNone(package)
             assert package is not None
-            self.assertTrue((package / ".claude" / "CLAUDE.md").is_file())
+            assert (package / ".claude" / "CLAUDE.md").is_file()
 
     def test_diagnosis_prompt_with_skills(self) -> None:
         with unittest.mock.patch.dict(
             os.environ, {ENV_ENABLE_SKILLS: "true"}, clear=True
         ):
             prompt = diagnosis_prompt_with_skills(OVERALL_DIAGNOSIS_PROMPT)
-            self.assertIn(SKILLS_PROMPT_SUFFIX, prompt)
+            assert SKILLS_PROMPT_SUFFIX in prompt
         with unittest.mock.patch.dict(
             os.environ, {ENV_ENABLE_SKILLS: "false"}, clear=True
         ):
-            self.assertEqual(
-                diagnosis_prompt_with_skills(OVERALL_DIAGNOSIS_PROMPT),
-                OVERALL_DIAGNOSIS_PROMPT,
+            assert (
+                diagnosis_prompt_with_skills(OVERALL_DIAGNOSIS_PROMPT)
+                == OVERALL_DIAGNOSIS_PROMPT
             )
 
 
-class SkillsWorkspaceTest(unittest.TestCase):
+class SkillsWorkspaceTest:
     def test_prepare_claude_workspace_links_dot_claude(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -110,8 +105,8 @@ class SkillsWorkspaceTest(unittest.TestCase):
             ):
                 prepare_claude_workspace(workspace)
             link = workspace / ".claude"
-            self.assertTrue(link.exists())
-            self.assertTrue((link / "skills" / "nika-test-skill" / "SKILL.md").exists())
+            assert link.exists()
+            assert (link / "skills" / "nika-test-skill" / "SKILL.md").exists()
 
     def test_prepare_codex_workspace_links_agents_skills(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -120,15 +115,13 @@ class SkillsWorkspaceTest(unittest.TestCase):
                 os.environ, {ENV_ENABLE_SKILLS: "true"}, clear=True
             ):
                 prepare_codex_workspace(workspace)
-            self.assertTrue(
-                (
-                    workspace / ".agents" / "skills" / "nika-test-skill" / "SKILL.md"
-                ).exists()
-            )
-            self.assertTrue((workspace / "AGENTS.md").is_file())
+            assert (
+                workspace / ".agents" / "skills" / "nika-test-skill" / "SKILL.md"
+            ).exists()
+            assert (workspace / "AGENTS.md").is_file()
 
 
-class SkillAssertionTest(unittest.TestCase):
+class SkillAssertionTest:
     def test_skill_invoked_from_tool_start(self) -> None:
         messages = [
             {
@@ -137,7 +130,7 @@ class SkillAssertionTest(unittest.TestCase):
                 "input": "{'skill': 'nika-test-skill'}",
             }
         ]
-        self.assertTrue(skill_invoked(messages))
+        assert skill_invoked(messages)
 
     def test_skill_invoked_from_claude_event(self) -> None:
         messages = [
@@ -157,21 +150,18 @@ class SkillAssertionTest(unittest.TestCase):
                 },
             }
         ]
-        self.assertTrue(skill_invoked(messages))
+        assert skill_invoked(messages)
 
     def test_marker_before_first_mcp_tool(self) -> None:
         messages = [
-            {
-                "event": "llm_end",
-                "text": "NIKA_TEST_SKILL_ACTIVE",
-            },
+            {"event": "llm_end", "text": "NIKA_TEST_SKILL_ACTIVE"},
             {
                 "event": "tool_start",
                 "tool": {"name": "get_reachability"},
                 "input": "{}",
             },
         ]
-        self.assertTrue(marker_before_first_mcp_tool(messages))
+        assert marker_before_first_mcp_tool(messages)
 
     def test_marker_must_precede_mcp_tools(self) -> None:
         messages = [
@@ -180,12 +170,9 @@ class SkillAssertionTest(unittest.TestCase):
                 "tool": {"name": "get_reachability"},
                 "input": "{}",
             },
-            {
-                "event": "llm_end",
-                "text": "NIKA_TEST_SKILL_ACTIVE",
-            },
+            {"event": "llm_end", "text": "NIKA_TEST_SKILL_ACTIVE"},
         ]
-        self.assertFalse(marker_before_first_mcp_tool(messages))
+        assert not marker_before_first_mcp_tool(messages)
 
 
 def _skills_env_patch() -> dict[str, str]:
@@ -207,25 +194,26 @@ class _SkillPipelineMixin:
         return kwargs
 
     def test_step_03_run_agent_with_skills(self) -> None:
-        self.assertIsNotNone(self.session_id)
+        assert self.session_id is not None
         with unittest.mock.patch.dict(os.environ, _skills_env_patch(), clear=False):
-            self._run_agent(**self._agent_run_kwargs())  # type: ignore[arg-type]
+            self._run_agent(**self._agent_run_kwargs())
         row = SessionStore().get_session(self.session_id)
-        self.assertEqual(row.get("agent_type"), self.agent_id)
+        assert row.get("agent_type") == self.agent_id
 
     def test_step_04_check_skill_invocation(self) -> None:
-        self.assertIsNotNone(self.session_dir)
+        assert self.session_dir is not None
         messages = self._load_jsonl("messages.jsonl")
-        assert_skill_invoked(self, messages)
+        assert_skill_invoked(messages)
 
     def test_step_05_check_submission(self) -> None:
-        self.assertIsNotNone(self.session_dir)
-        self.assertTrue((self.session_dir / "submission.json").exists())
-        assert_submission_fields(self, self.session_dir)
+        assert self.session_dir is not None
+        assert (self.session_dir / "submission.json").exists()
+        assert_submission_fields(self.session_dir)
 
 
-@unittest.skipUnless(
-    claude_sdk_available(), "claude-agent-sdk + ANTHROPIC credentials required"
+@pytest.mark.skipif(
+    not claude_sdk_available(),
+    reason="claude-agent-sdk + ANTHROPIC credentials required",
 )
 class ClaudeSdkSkillPipelineTest(
     _SkillPipelineMixin, CommonPipelineSteps, OrderedPipelineTestCase
@@ -242,8 +230,8 @@ class ClaudeSdkSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
-@unittest.skipUnless(
-    claude_cli_available(), "Claude CLI + ANTHROPIC credentials required"
+@pytest.mark.skipif(
+    not claude_cli_available(), reason="Claude CLI + ANTHROPIC credentials required"
 )
 class ClaudeCliSkillPipelineTest(
     _SkillPipelineMixin, CommonPipelineSteps, OrderedPipelineTestCase
@@ -260,7 +248,9 @@ class ClaudeCliSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
-@unittest.skipUnless(codex_cli_available(), "Codex CLI and OpenAI credentials required")
+@pytest.mark.skipif(
+    not codex_cli_available(), reason="Codex CLI and OpenAI credentials required"
+)
 class CodexCliSkillPipelineTest(
     _SkillPipelineMixin, CommonPipelineSteps, OrderedPipelineTestCase
 ):
@@ -277,8 +267,8 @@ class CodexCliSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
-@unittest.skipUnless(
-    codex_sdk_available(), "openai-codex + ~/.codex/auth.json required"
+@pytest.mark.skipif(
+    not codex_sdk_available(), reason="openai-codex + ~/.codex/auth.json required"
 )
 class CodexSdkSkillPipelineTest(
     _SkillPipelineMixin, CommonPipelineSteps, OrderedPipelineTestCase
@@ -298,15 +288,15 @@ class CodexSdkSkillPipelineTest(
 
 class _ClabSkillPipelineMixin(_SkillPipelineMixin):
     def test_step_01_start_env(self) -> None:
-        self._step_start_env()  # type: ignore[attr-defined]
+        self._step_start_env()
 
     def test_step_02_inject_failure(self) -> None:
-        self._step_inject_failure()  # type: ignore[attr-defined]
+        self._step_inject_failure()
 
 
-@unittest.skipUnless(
-    _min3clos_prerequisites() and claude_sdk_available(),
-    "containerlab/gnmic/Docker or claude-agent-sdk credentials required",
+@pytest.mark.skipif(
+    not (_min3clos_prerequisites() and claude_sdk_available()),
+    reason="containerlab/gnmic/Docker or claude-agent-sdk credentials required",
 )
 class ClaudeSdkClabSkillPipelineTest(
     _ClabSkillPipelineMixin, ClabCommonPipelineSteps, OrderedPipelineTestCase
@@ -314,12 +304,12 @@ class ClaudeSdkClabSkillPipelineTest(
     agent_id = "sdk.claude_sdk"
 
     def test_step_06_session_close(self) -> None:
-        self._step_close_and_verify(self.agent_id)  # type: ignore[attr-defined]
+        self._step_close_and_verify(self.agent_id)
 
 
-@unittest.skipUnless(
-    _min3clos_prerequisites() and claude_cli_available(),
-    "containerlab/gnmic/Docker or Claude CLI credentials required",
+@pytest.mark.skipif(
+    not (_min3clos_prerequisites() and claude_cli_available()),
+    reason="containerlab/gnmic/Docker or Claude CLI credentials required",
 )
 class ClaudeCliClabSkillPipelineTest(
     _ClabSkillPipelineMixin, ClabCommonPipelineSteps, OrderedPipelineTestCase
@@ -327,12 +317,12 @@ class ClaudeCliClabSkillPipelineTest(
     agent_id = "local_cli.claude_cli"
 
     def test_step_06_session_close(self) -> None:
-        self._step_close_and_verify(self.agent_id)  # type: ignore[attr-defined]
+        self._step_close_and_verify(self.agent_id)
 
 
-@unittest.skipUnless(
-    _min3clos_prerequisites() and codex_cli_available(),
-    "containerlab/gnmic/Docker or Codex CLI credentials required",
+@pytest.mark.skipif(
+    not (_min3clos_prerequisites() and codex_cli_available()),
+    reason="containerlab/gnmic/Docker or Codex CLI credentials required",
 )
 class CodexCliClabSkillPipelineTest(
     _ClabSkillPipelineMixin, ClabCommonPipelineSteps, OrderedPipelineTestCase
@@ -341,12 +331,12 @@ class CodexCliClabSkillPipelineTest(
     agent_model = CODEX_MODEL
 
     def test_step_06_session_close(self) -> None:
-        self._step_close_and_verify(self.agent_id)  # type: ignore[attr-defined]
+        self._step_close_and_verify(self.agent_id)
 
 
-@unittest.skipUnless(
-    _min3clos_prerequisites() and codex_sdk_available(),
-    "containerlab/gnmic/Docker or openai-codex credentials required",
+@pytest.mark.skipif(
+    not (_min3clos_prerequisites() and codex_sdk_available()),
+    reason="containerlab/gnmic/Docker or openai-codex credentials required",
 )
 class CodexSdkClabSkillPipelineTest(
     _ClabSkillPipelineMixin, ClabCommonPipelineSteps, OrderedPipelineTestCase
@@ -355,8 +345,4 @@ class CodexSdkClabSkillPipelineTest(
     agent_model = CODEX_MODEL
 
     def test_step_06_session_close(self) -> None:
-        self._step_close_and_verify(self.agent_id)  # type: ignore[attr-defined]
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self._step_close_and_verify(self.agent_id)

@@ -48,10 +48,10 @@ pipeline** on `simple_bgp` / `link_down`:
 
 ```shell
 # All agent tests (unit + pipeline; missing credentials skip pipeline only)
-uv run python -m unittest discover -s tests/agent -p 'test_*.py' -v
+uv run pytest tests/agent/ -v
 
 # Unit tests only (no Docker)
-uv run python -m unittest tests.agent.test_agent_config -v
+uv run pytest tests/agent/test_agent_config.py -v
 ```
 
 ## Workflow tests (`tests/nika/workflows/`)
@@ -64,8 +64,8 @@ uv run python -m unittest tests.agent.test_agent_config -v
 | `test_resume.py` | Resume/fingerprint unit tests (no Docker) |
 
 ```shell
-uv run python -m unittest tests.nika.workflows.benchmark.test_resume -v
-uv run python -m unittest tests.nika.workflows.benchmark.test_batch -v   # requires Docker
+uv run pytest tests/nika/workflows/benchmark/test_resume.py -v
+uv run pytest tests/nika/workflows/benchmark/test_batch.py -v   # requires Docker
 ```
 
 ### Eval (`eval/`)
@@ -83,8 +83,8 @@ uv run python -m unittest tests.nika.workflows.benchmark.test_batch -v   # requi
 | `test_pipeline_clab.py` | Containerlab min3clos pipeline (same steps) |
 
 ```shell
-uv run python -m unittest tests.nika.workflows.integration.test_pipeline_kathara -v   # requires Docker
-uv run python -m unittest tests.nika.workflows.integration.test_pipeline_clab -v      # requires containerlab + gnmic
+uv run pytest tests/nika/workflows/integration/test_pipeline_kathara.py -v   # requires Docker
+uv run pytest tests/nika/workflows/integration/test_pipeline_clab.py -v      # requires containerlab + gnmic
 ```
 
 ## Service tests (`tests/nika/service/`)
@@ -104,8 +104,8 @@ they are covered by the workflow integration pipelines (`test_pipeline_kathara`,
 | `containerlab/test_srl_api.py` | SRL API parsing/script logic (mocked runtime) |
 
 ```shell
-uv run python -m unittest discover -s tests/nika/service/pingmesh -p 'test_*.py' -v
-uv run python -m unittest tests.nika.service.pingmesh.test_integration.KatharaPingMeshIntegrationTest -v
+uv run pytest tests/nika/service/pingmesh/ -v
+uv run pytest tests/nika/service/pingmesh/test_integration.py::KatharaPingMeshIntegrationTest -v
 ```
 
 ## Problem injection (`tests/nika/problems/`)
@@ -124,14 +124,13 @@ Deploy and `verify_lab` checks for Kathara and Containerlab scenarios.
 Pure Python tests (no Docker): backend resolution, session index, system logger, etc.
 
 ```shell
-uv run --with pytest pytest tests/nika/runtime/ -v
-uv run python -m unittest tests.nika.runtime.test_session_index -v
+uv run pytest tests/nika/runtime/ -v
 ```
 
 ## Evaluator unit tests (`tests/nika/evaluator/`)
 
 ```shell
-uv run --with pytest pytest tests/nika/evaluator/ -v
+uv run pytest tests/nika/evaluator/ -v
 ```
 
 ## Mock agent (test-only)

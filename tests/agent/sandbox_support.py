@@ -1,5 +1,3 @@
-"""Helpers for sandbox security and integration tests."""
-
 from __future__ import annotations
 
 import os

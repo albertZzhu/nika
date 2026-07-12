@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import unittest
+import re
 from pathlib import Path
 from typing import Any, ClassVar
 
+import pytest
 from typer.testing import CliRunner
 
 from nika.cli.main import app
@@ -23,6 +24,8 @@ from nika.workflows.failure.inject import inject_failure as inject_failure_workf
 from nika.workflows.session.close import close_session
 
 TEST_SESSION_ID_RE = session_id_pattern(TEST_SESSION_TAG)
+
+
 def _parse_env_run_args(extra_args: list[str] | None) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
     args = list(extra_args or [])
@@ -59,7 +62,7 @@ def _parse_inject_args(extra_args: list[str]) -> dict[str, str]:
     return overrides
 
 
-class IntegrationTestCase(unittest.TestCase):
+class IntegrationMixin:
     """Workflow API helpers and shared session assertions."""
 
     def _start_env(self, scenario: str, extra_args: list[str] | None = None) -> str:
@@ -150,18 +153,17 @@ class IntegrationTestCase(unittest.TestCase):
 
     def _assert_session_ready(self, session_id: str, scenario: str) -> dict:
         row = self._session_row(session_id)
-        self.assertEqual(row["session_id"], session_id)
-        self.assertEqual(row["status"], "running")
-        self.assertEqual(row["scenario_name"], scenario)
-        self.assertIsNotNone(row.get("lab_name"), "lab_name must be set after env run")
-        self.assertIn(scenario, row["lab_name"])
-        self.assertRegex(
-            session_id,
+        assert row["session_id"] == session_id
+        assert row["status"] == "running"
+        assert row["scenario_name"] == scenario
+        assert row.get("lab_name") is not None, "lab_name must be set after env run"
+        assert scenario in row["lab_name"]
+        assert re.search(
             TEST_SESSION_ID_RE,
-            f"session_id must match YYYYMMDD-HHMMSS-{TEST_SESSION_TAG}-{{6hex}}",
-        )
+            session_id,
+        ), f"session_id must match YYYYMMDD-HHMMSS-{TEST_SESSION_TAG}-{{6hex}}"
         if os.environ.get(SESSION_ID_ENV) == session_id:
-            self.assertEqual(get_lab_name(), row["lab_name"])
+            assert get_lab_name() == row["lab_name"]
         return row
 
     def _scenario_kwargs(self, session_id: str | None = None) -> dict:
@@ -192,7 +194,9 @@ class IntegrationTestCase(unittest.TestCase):
         problem: str,
         topo_size: str = "",
     ) -> dict[str, str]:
-        from tests.nika.workflows.benchmark.helpers import inject_params_from_benchmark_yaml
+        from tests.nika.workflows.benchmark.helpers import (
+            inject_params_from_benchmark_yaml,
+        )
 
         return inject_params_from_benchmark_yaml(scenario, problem, topo_size)
 
@@ -204,22 +208,29 @@ class IntegrationTestCase(unittest.TestCase):
             raise ValueError("session_id is required")
         failures = SessionStore().list_failure_injections(session_id=sid)
         matching = [row for row in failures if row.get("problem_name") == problem]
-        self.assertTrue(matching, f"No failure record for {problem}")
-        self.assertEqual(matching[-1].get("status"), "injected")
+        assert matching, f"No failure record for {problem}"
+        assert matching[-1].get("status") == "injected"
 
 
-class CliIntegrationTestCase(IntegrationTestCase):
+IntegrationTestCase = IntegrationMixin
+
+
+class CliIntegrationMixin(IntegrationMixin):
     """Typer CLI runner for tests that exercise command-line behavior."""
 
     runner: CliRunner
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.runner = CliRunner()
+    @pytest.fixture(scope="class")
+    def cli_runner(self) -> CliRunner:
+        return CliRunner()
+
+    @pytest.fixture(autouse=True)
+    def _bind_cli_runner(self, cli_runner: CliRunner) -> None:
+        type(self).runner = cli_runner
 
     def _invoke_ok(self, args: list[str]) -> str:
         result = self.runner.invoke(app, args)
-        self.assertEqual(result.exit_code, 0, result.output)
+        assert result.exit_code == 0, result.output
         return result.output
 
     @classmethod
@@ -232,7 +243,10 @@ class CliIntegrationTestCase(IntegrationTestCase):
         return result.output
 
 
-class PerTestEnvTestCase(IntegrationTestCase):
+CliIntegrationTestCase = CliIntegrationMixin
+
+
+class PerTestEnvMixin(IntegrationMixin):
     """Start a fresh lab per test; bind operations to NIKA_SESSION_ID."""
 
     SCENARIO: ClassVar[str]
@@ -241,13 +255,13 @@ class PerTestEnvTestCase(IntegrationTestCase):
     session_id: str
     _prev_nika_session_id: str | None
 
-    def setUp(self) -> None:
+    @pytest.fixture(autouse=True)
+    def _per_test_env(self):
         self.session_id = self._start_env(self.SCENARIO, self.ENV_RUN_ARGS)
         self._prev_nika_session_id = os.environ.get(SESSION_ID_ENV)
         os.environ[SESSION_ID_ENV] = self.session_id
         self._assert_session_ready(self.session_id, self.SCENARIO)
-
-    def tearDown(self) -> None:
+        yield
         if getattr(self, "session_id", None):
             self._close_session(self.session_id)
         if getattr(self, "_prev_nika_session_id", None) is None:
@@ -266,7 +280,10 @@ class PerTestEnvTestCase(IntegrationTestCase):
         return self._session_row(self.session_id)["lab_name"]
 
 
-class SharedSessionTestCase(IntegrationTestCase):
+PerTestEnvTestCase = PerTestEnvMixin
+
+
+class SharedSessionMixin(IntegrationMixin):
     """Start one lab for the whole test class; optionally inject a failure up front."""
 
     SCENARIO: ClassVar[str]
@@ -277,8 +294,9 @@ class SharedSessionTestCase(IntegrationTestCase):
 
     session_id: str
 
-    @classmethod
-    def setUpClass(cls) -> None:
+    @pytest.fixture(scope="class", autouse=True)
+    def _shared_session(self):
+        cls = type(self)
         cls.session_id = cls._start_env_class(cls.SCENARIO, cls.ENV_RUN_ARGS)
         if cls.INJECT_PROBLEM is not None:
             params = (
@@ -295,21 +313,24 @@ class SharedSessionTestCase(IntegrationTestCase):
             except Exception as exc:
                 cls._close_session_class(cls.session_id)
                 raise exc
-
-    @classmethod
-    def tearDownClass(cls) -> None:
+        yield
         cls._close_session_class(cls.session_id)
 
 
-class OrderedPipelineTestCase(IntegrationTestCase):
+SharedSessionTestCase = SharedSessionMixin
+
+
+class OrderedPipelineMixin(IntegrationMixin):
     """Ordered step tests that share session state across methods in one class."""
 
     session_id: str | None = None
     session_dir: Path | None = None
     env_destroyed: bool = False
 
-    @classmethod
-    def tearDownClass(cls) -> None:
+    @pytest.fixture(scope="class", autouse=True)
+    def _ordered_pipeline_teardown(self):
+        yield
+        cls = type(self)
         if cls.session_id and not cls.env_destroyed:
             cls._close_session_class(cls.session_id)
 
@@ -326,3 +347,6 @@ class OrderedPipelineTestCase(IntegrationTestCase):
             .splitlines()
             if line.strip()
         ]
+
+
+OrderedPipelineTestCase = OrderedPipelineMixin

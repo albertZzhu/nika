@@ -47,8 +47,13 @@ nika = "nika.cli.main:main"
 where = ["src"]
 include = ["nika*", "agent*"]
 
+[dependency-groups]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
+python_classes = ["Test*", "*Test", "*Tests", "*TestCase"]
+asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning:fs",
     "ignore::DeprecationWarning:fs.opener",

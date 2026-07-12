@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from gettext import gettext as _
 from typing import Any
 
+import click as _click
 import typer
-from typer import _click
 from typer.core import TyperCommand, TyperGroup
 from typer.main import get_command, get_group
 

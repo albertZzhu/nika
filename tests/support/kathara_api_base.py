@@ -1,5 +1,3 @@
-"""Shared bases for Kathara scenario API smoke tests."""
-
 from __future__ import annotations
 
 from typing import ClassVar
@@ -19,6 +17,11 @@ class KatharaScenarioApiSmokeTest(SharedSessionTestCase, ApiSmokeMixin):
 
     __test__ = False
     ENV_RUN_ARGS: ClassVar[list[str]] = []
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls is not KatharaScenarioApiSmokeTest:
+            cls.__test__ = True
 
     def _lab_name(self) -> str:
         return str(self._session_row(self.session_id)["lab_name"])

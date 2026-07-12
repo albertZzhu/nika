@@ -1,5 +1,3 @@
-"""Shared helpers for network environment verification tests."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -26,6 +24,6 @@ def instantiate_with_mocked_kathara(
         return factory()
 
 
-def assert_verify_success(testcase, result: dict) -> None:
-    testcase.assertTrue(result["verified"], result["checks"])
-    testcase.assertTrue(all(result["checks"].values()), result["checks"])
+def assert_verify_success(result: dict) -> None:
+    assert result["verified"], result["checks"]
+    assert all(result["checks"].values()), result["checks"]

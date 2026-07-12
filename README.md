@@ -218,7 +218,7 @@ uv run --with pytest pytest -v
 
 # run only selected test files
 uv run --with pytest pytest tests/nika/runtime/ -v
-uv run python -m unittest tests.nika.workflows.benchmark.test_resume -v
+uv run pytest tests/nika/workflows/benchmark/test_resume.py -v
 ```
 
 <h1 id="🛠️usage">🛠️ Usage</h1>

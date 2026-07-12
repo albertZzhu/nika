@@ -1,12 +1,9 @@
-"""Unit tests for SQLite session index behavior not covered by integration pipeline."""
-
 from __future__ import annotations
 
+import pytest
 import json
 import tempfile
-import unittest
 from pathlib import Path
-
 from nika.utils.session_index import SessionIndex
 from nika.utils.session_store import SessionStore
 
@@ -15,8 +12,9 @@ GROUND_TRUTH_FILENAME = "ground_truth.json"
 EVAL_METRICS_FILENAME = "eval_metrics.json"
 
 
-class SessionIndexTestCase(unittest.TestCase):
-    def setUp(self) -> None:
+class SessionIndexTestCase:
+    @pytest.fixture(autouse=True)
+    def _setup(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.sessions_dir = self.root / "sessions"
@@ -26,8 +24,7 @@ class SessionIndexTestCase(unittest.TestCase):
         self.results_dir.mkdir()
         self.index = SessionIndex(self.db_path)
         self.store = SessionStore(self.sessions_dir, self.db_path)
-
-    def tearDown(self) -> None:
+        yield
         self.tmp.cleanup()
 
     def _create_session(self, session_id: str = "20260101-120000-abc123") -> None:
@@ -54,15 +51,15 @@ class SessionIndexTestCase(unittest.TestCase):
         )
         row = self.index.get_row("20260101-120000-abc123")
         assert row is not None
-        self.assertEqual(row["failure_count"], 1)
+        assert row["failure_count"] == 1
 
     def test_purge_and_truncate(self) -> None:
         self._create_session()
         self.index.purge("20260101-120000-abc123")
-        self.assertIsNone(self.index.get_row("20260101-120000-abc123"))
+        assert self.index.get_row("20260101-120000-abc123") is None
         self._create_session("20260102-120000-def456")
         self.index.truncate()
-        self.assertEqual(len(self.index.list_sessions(running_only=False)), 0)
+        assert len(self.index.list_sessions(running_only=False)) == 0
 
     def test_rebuild_from_results(self) -> None:
         session_id = "20260103-120000-fff999"
@@ -86,17 +83,12 @@ class SessionIndexTestCase(unittest.TestCase):
             json.dumps({"detection_score": 1.0, "localization_f1": 1.0, "rca_f1": 1.0}),
             encoding="utf-8",
         )
-
         count = self.index.rebuild_from_results(self.results_dir)
-        self.assertEqual(count, 1)
+        assert count == 1
         row = self.index.get_row(session_id)
         assert row is not None
-        self.assertEqual(row["status"], "finished")
-        self.assertEqual(row["agent_type"], "mock")
-        self.assertEqual(row["faulty_devices"], ["pc1"])
-        self.assertEqual(row["detection_score"], 1.0)
-        self.assertEqual(row["failure_count"], 1)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert row["status"] == "finished"
+        assert row["agent_type"] == "mock"
+        assert row["faulty_devices"] == ["pc1"]
+        assert row["detection_score"] == 1.0
+        assert row["failure_count"] == 1

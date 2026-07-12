@@ -33,10 +33,10 @@
 
 ## Testing Commands
 
-- Run all pytest tests: `uv run --with pytest pytest`
-- Run a focused pytest path: `uv run --with pytest pytest tests/nika/runtime/ -v`
-- Run all agent unittest tests: `uv run python -m unittest discover -s tests/agent -p 'test_*.py' -v`
-- Run a focused unittest module: `uv run python -m unittest tests.agent.test_mock -v`
+- Install dev dependencies (includes pytest): `uv sync --group dev`
+- Run all tests: `uv run pytest`
+- Run a focused path: `uv run pytest tests/nika/runtime/ -v`
+- Run agent tests: `uv run pytest tests/agent/ -v`
 - Prefer focused tests near the changed behavior before broader suites.
 - Docker, Kathara, Containerlab, local CLIs, or API credentials are required for many integration and agent tests; report unavailable prerequisites instead of treating them as code failures.
 
@@ -71,7 +71,7 @@
 
 ## Testing Guidance
 
-- For pure Python changes, use targeted `pytest` or `unittest` commands before broader suites.
+- For pure Python changes, use targeted `pytest` commands before broader suites.
 - For CLI behavior, test through the CLI path when practical because config resolution, repository-root path resolution, and session selection are part of the behavior.
 - For benchmark resume or artifact logic, verify against a temporary or isolated `--result_dir`.
 - Do not assume Docker/Kathara/Containerlab integration tests can run in every environment; report skipped or unavailable checks clearly.
