@@ -24,7 +24,7 @@ src/agent/
 ├── sdk/                  # SDK agents (claude-agent-sdk, openai-codex)
 │   ├── claude_sdk/       # -a sdk.claude_sdk
 │   └── codex_sdk/        # -a sdk.codex_sdk
-├── sandbox/              # Docker sandbox image, runner, and manager
+├── sandbox/              # Docker Sandboxes (sbx) runner / manager / credentials
 ├── skills/               # Shared skill library (.claude/ + .agents/)
 ├── llm/                  # LangChain model factory (langgraph path)
 └── utils/                # MCP config, phases, loggers, skills helpers
@@ -35,8 +35,8 @@ src/agent/
 | CLI name | Orchestration | LLM access | Status |
 |----------|---------------|------------|--------|
 | `byo.langgraph` | LangGraph `StateGraph` | LangChain ReAct + `load_model()` | Implemented |
-| `local_cli.codex_cli` | LangGraph `StateGraph` | `codex exec` subprocess + shared `.agents/skills/` | Implemented |
-| `local_cli.claude_cli` | LangGraph `StateGraph` | `claude -p` subprocess + shared `.claude/skills/` | Implemented |
+| `local_cli.codex_cli` | Native two-phase (no LangGraph) | `codex exec` subprocess + shared `.agents/skills/` | Implemented |
+| `local_cli.claude_cli` | Native two-phase (no LangGraph) | `claude -p` subprocess + shared `.claude/skills/` | Implemented |
 | `byo.mcp_agent` | mcp-agent `Workflow` | mcp-agent + OpenAI | Implemented |
 | `byo.autogen` | AutoGen `GraphFlow` | AutoGen AgentChat + OpenAI | Implemented |
 | `community.sade` | Single Claude Code session + 15-skill library | `claude-agent-sdk` (optional extra `sade`) | Implemented |
@@ -77,25 +77,26 @@ Every agent runs **diagnosis** (Kathara MCP, `if_submit=False`) then **submissio
 | `-m` / `--model` | `NIKA_MODEL` | No | Overrides agent-specific model env when set |
 | `--session_id` | — | No | Target session (default: current running session) |
 
-### Sandbox (CLI/SDK agents)
+### Sandbox (non-BYO agents)
 
-Run supported agents inside Docker while MCP tools and the network lab stay on the host. See **[docs/agent-sandbox.md](../../docs/agent-sandbox.md)**.
+CLI, SDK, and SADE agents always run inside Docker Sandboxes (`sbx` microVMs) using official `codex` / `claude` / `shell` templates. MCP tools and the network lab stay on the host. BYO agents run on the host. See **[docs/agent-sandbox.md](../../docs/agent-sandbox.md)**.
+
+Auth uses the host `sbx secret` store (credential proxy). API keys in `.env` are synced automatically; Codex subscription uses `sbx secret set -g openai --oauth`; Claude subscription uses `/login`. Host auth files are never copied into the sandbox.
 
 | Flag | Env | Notes |
 |------|-----|-------|
-| `--sandbox` | `NIKA_AGENT_SANDBOX` | Enable container execution |
-| `--sandbox-image` | `NIKA_SANDBOX_IMAGE` | Default `nika/agent-sandbox:latest` |
-| `--sandbox-env-file` | `NIKA_SANDBOX_ENV_FILE` | Whitelisted credential injection (default repo `.env`) |
-| `--sandbox-keep-container` | `NIKA_SANDBOX_KEEP` | Keep container after agent exit |
-| `--sandbox-cpus` | `NIKA_SANDBOX_CPUS` | Docker CPU limit |
-| `--sandbox-memory` | `NIKA_SANDBOX_MEMORY` | Docker memory limit |
+| `--sandbox-env-file` | `NIKA_SANDBOX_ENV_FILE` | Credential resolution (default repo `.env`) |
+| `--sandbox-keep-container` | `NIKA_SANDBOX_KEEP` | Keep the sandbox after agent exit (debug) |
+| `--sandbox-cpus` | `NIKA_SANDBOX_CPUS` | sbx CPU limit |
+| `--sandbox-memory` | `NIKA_SANDBOX_MEMORY` | sbx memory limit |
+| `--sandbox-offline-sdk-wheels` | `NIKA_SANDBOX_OFFLINE_SDK_WHEELS` | Optional; speeds up SDK/SADE deploys via host-cached wheels |
+| `--sandbox-proxy` | `NIKA_SANDBOX_UPSTREAM_PROXY` | Optional upstream proxy for sbx daemon |
 
-Default sandbox networking is `bridge` with **direct** LLM API access (no proxy). Optional outbound proxy for restricted networks: set `NIKA_SANDBOX_HTTP_PROXY` / `NIKA_SANDBOX_AUTO_PROXY` in gitignored `.env.sandbox.local` — see **[docs/agent-sandbox.md](../../docs/agent-sandbox.md)**.
-
-The sandbox image is built automatically on the first `--sandbox` run when missing locally.
+Outbound proxy and offline SDK wheels are **off by default**. Enable via repo-root `.env` when needed (see `.env.example`).
 
 ```bash
-uv run nika agent run --sandbox -a local_cli.codex_cli -m gpt-5.4-mini -n 20
+uv run nika agent run -a local_cli.codex_cli -m gpt-5-mini -n 20
+uv run nika agent run -a local_cli.claude_cli -m deepseek-v4-flash -n 20
 ```
 
 Model resolution order: `-m` → `NIKA_MODEL` → agent-specific env (below).
@@ -162,11 +163,11 @@ No API key. `load_model()` validates the model at init — run `ollama pull` fir
 
 ## local_cli.codex_cli
 
-LangGraph orchestration + `codex exec` subprocess per phase. Workspace: `results/{session_id}/codex_workspace/`. MCP config written to an isolated `CODEX_HOME` (does not touch `~/.codex/`).
+Native two-phase orchestration + `codex exec` via `sbx exec` (native `codex` template). Workspace: `results/{session_id}/codex_workspace/`. MCP config written to an isolated `CODEX_HOME`.
 
 **Entry**: `agent.local_cli.codex_cli.agent.CodexCliAgent`
 
-**Requires**: [Codex CLI](https://github.com/openai/codex) on `PATH`. Auth via `codex login` or `OPENAI_API_KEY`.
+**Requires**: [Codex CLI](https://github.com/openai/codex) available in the sbx `codex` template. Auth: `OPENAI_API_KEY` in `.env` (synced to `sbx secret`) or `sbx secret set -g openai --oauth`.
 
 | Flag | Env | Notes |
 |------|-----|-------|
@@ -174,36 +175,36 @@ LangGraph orchestration + `codex exec` subprocess per phase. Workspace: `results
 | `-e` / `--reasoning-effort` | `NIKA_CODEX_REASONING_EFFORT` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`; optional |
 
 ```bash
-codex login   # once
-
 # .env
 NIKA_AGENT_TYPE=local_cli.codex_cli
 NIKA_MAX_STEPS=20
-NIKA_CODEX_MODEL=gpt-5.4-mini
+NIKA_CODEX_MODEL=gpt-5-mini
 # NIKA_CODEX_REASONING_EFFORT=medium
+# or: sbx secret set -g openai --oauth
 
-nika agent run -a local_cli.codex_cli -m gpt-5.4-mini -e medium
+nika agent run -a local_cli.codex_cli -m gpt-5-mini -e medium
 ```
 
 ---
 
 ## local_cli.claude_cli
 
-LangGraph orchestration + `claude -p` subprocess per phase. Workspace: `results/{session_id}/claude_workspace/`. MCP config: `{phase}_mcp_config.json`.
+Native two-phase orchestration + `claude -p` via `sbx exec` (native `claude` template). Workspace: `results/{session_id}/claude_workspace/`. MCP config: `{phase}_mcp_config.json`.
 
 **Entry**: `agent.local_cli.claude_cli.agent.ClaudeAgent`
 
-**Requires**: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on `PATH`.
+**Requires**: Claude Code available in the sbx `claude` template.
 
 **Auth** (pick one):
 
 | Mode | Setup |
 |------|-------|
-| Anthropic API | `ANTHROPIC_API_KEY` |
+| DeepSeek (preferred) | `DEEPSEEK_API_KEY` (defaults `ANTHROPIC_BASE_URL` to DeepSeek Anthropic path) |
 | Compatible proxy | `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` |
-| OAuth | `claude auth login` |
+| Native Anthropic API | `ANTHROPIC_API_KEY` in `.env` (auto-synced to `sbx secret`) |
+| Claude subscription | `/login` so the host stores the `anthropic` sbx secret |
 
-When credentials come from env vars, NIKA runs `claude` with `--bare`. With OAuth only, keychain credentials are used.
+When credentials come from env vars, NIKA runs `claude` with `--bare`. Subscription / OAuth mode does not use `--bare`.
 
 **Model** (when `-m` omitted, first non-empty wins):
 
@@ -288,7 +289,7 @@ Native two-phase pipeline via ``claude-agent-sdk`` ``ClaudeSDKClient`` (no LangG
 
 **Requires**: `uv sync --extra sdk --prerelease=allow`
 
-**Auth**: DeepSeek or Anthropic via env (same as `local_cli.claude_cli` option B):
+**Auth**: Anthropic API key / token in `.env` (auto-synced), or Claude subscription via `/login` (`anthropic` sbx secret). Same modes as `local_cli.claude_cli`.
 
 ```bash
 ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
@@ -316,7 +317,7 @@ Native two-phase pipeline via ``openai-codex`` ``AsyncCodex`` threads (no LangGr
 
 **Requires**: `uv sync --extra sdk --prerelease=allow`
 
-**Auth**: Local only — `codex login` → `~/.codex/auth.json` (does not use `OPENAI_API_KEY`).
+**Auth**: `OPENAI_API_KEY` in `.env` (auto-synced to `sbx secret`) or Codex subscription via `sbx secret set -g openai --oauth`.
 
 | Flag | Env | Notes |
 |------|-----|-------|
@@ -324,7 +325,8 @@ Native two-phase pipeline via ``openai-codex`` ``AsyncCodex`` threads (no LangGr
 | `-e` / `--reasoning-effort` | `NIKA_CODEX_REASONING_EFFORT` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 
 ```bash
-codex login   # once
+# API key in .env, or once:
+# sbx secret set -g openai --oauth
 
 nika agent run -a sdk.codex_sdk -m gpt-5.4-mini -e medium
 ```

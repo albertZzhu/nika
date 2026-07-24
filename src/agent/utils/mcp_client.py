@@ -7,11 +7,17 @@ import os
 import urllib.error
 import urllib.request
 
-from agent.sandbox.config import ENV_SANDBOX_EXECUTION
-from agent.utils.mcp_servers import MCPServerConfig, SESSION_HEADER
+from agent.sandbox.config import (
+    ENV_GATEWAY_AGENT_URL,
+    ENV_GATEWAY_URL,
+    ENV_SANDBOX_EXECUTION,
+    ENV_SESSION_DIR,
+)
+from agent.sandbox.manifest import manifest_mcp_servers
+from agent.sandbox.sbx.agents import ENV_SBX_SANDBOX_NAME
 from agent.utils.phases import SUBMISSION
-from nika.service.mcp_gateway.lifecycle import ENV_GATEWAY_AGENT_URL, ENV_GATEWAY_URL
-from nika.service.mcp_gateway.phase import advance_mcp_phase
+
+SESSION_HEADER = "NIKA-Session-Id"
 
 
 def load_session_mcp_config(
@@ -21,8 +27,16 @@ def load_session_mcp_config(
     backend: str | None = None,
 ) -> dict:
     """Return session-scoped HTTP MCP config (phase filtering is gateway-side)."""
-    if backend is None and os.environ.get("NIKA_SANDBOX_EXECUTION") == "1":
-        backend = os.environ.get("NIKA_SESSION_BACKEND", "").strip() or None
+    if os.environ.get(ENV_SANDBOX_EXECUTION) == "1":
+        session_dir = os.environ.get(ENV_SESSION_DIR, "").strip()
+        if session_dir:
+            baked = manifest_mcp_servers(session_dir)
+            if baked is not None:
+                return baked
+        if backend is None:
+            backend = os.environ.get("NIKA_SESSION_BACKEND", "").strip() or None
+    from agent.utils.mcp_servers import MCPServerConfig
+
     return MCPServerConfig(session_id=session_id).load_session_http_config(
         scenario_name,
         backend=backend,
@@ -40,6 +54,11 @@ def _gateway_base_for_phase_advance() -> str:
 def begin_submission_mcp_phase(session_id: str) -> None:
     """Advance gateway phase before starting the submission workflow step."""
     if os.environ.get(ENV_SANDBOX_EXECUTION) == "1":
+        if os.environ.get(ENV_SBX_SANDBOX_NAME, "").strip():
+            from nika.service.mcp_gateway.phase import advance_mcp_phase
+
+            advance_mcp_phase(session_id, SUBMISSION)
+            return
         base = _gateway_base_for_phase_advance()
         if not base:
             raise RuntimeError(
@@ -68,4 +87,6 @@ def begin_submission_mcp_phase(session_id: str) -> None:
                 f"MCP phase advance failed: HTTP {exc.code}: {body}"
             ) from exc
         return
+    from nika.service.mcp_gateway.phase import advance_mcp_phase
+
     advance_mcp_phase(session_id, SUBMISSION)

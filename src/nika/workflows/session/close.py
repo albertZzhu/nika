@@ -10,6 +10,7 @@ from Kathara.manager.Kathara import Kathara
 from nika.config import RESULTS_DIR, RUNTIME_DIR, SESSIONS_DB, SESSIONS_DIR, resolve_results_root
 from nika.net_env.net_env_pool import get_net_env_instance
 from nika.runtime.factory import resolve_backend, runtime_for_session
+import nika.runtime.kathara.patch  # noqa: F401  # privileged-without-root before wipe
 from nika.runtime.meta import meta_get, meta_path
 from nika.utils.logger import bind_session_dir, log_error_event, log_event
 from nika.utils.session import Session

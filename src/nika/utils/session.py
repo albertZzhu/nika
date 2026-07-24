@@ -81,11 +81,10 @@ class Session:
     def load_running_session(self, session_id: str | None = None):
         if os.environ.get("NIKA_SANDBOX_EXECUTION") == "1":
             session_dir = os.environ.get("NIKA_SESSION_DIR", "").strip()
-            if not session_dir:
-                raise ValueError(
-                    "NIKA_SESSION_DIR is required when NIKA_SANDBOX_EXECUTION=1"
-                )
-            return self.load_from_run_json(session_dir)
+            if session_dir:
+                run_path = Path(session_dir) / RUN_FILENAME
+                if run_path.is_file():
+                    return self.load_from_run_json(session_dir)
         resolved_id = resolve_running_session_id(session_id, store=self.store)
         session_meta = self.store.get_session(resolved_id)
         for key, value in session_meta.items():
@@ -196,7 +195,15 @@ class Session:
             if getattr(self, "session_dir", None):
                 self._write_run_json(payload)
             return self.session_id
-        self.store.update_session(self.session_id, payload)
+        try:
+            self.store.update_session(self.session_id, payload)
+        except FileNotFoundError:
+            # Runtime session doc may have been cleared by another process
+            # (e.g. concurrent `nika env run` / session close) while a long
+            # sandbox agent run was still in flight. Persist results only.
+            if getattr(self, "session_dir", None):
+                self._write_run_json(payload)
+            return self.session_id
         if getattr(self, "session_dir", None):
             self._write_run_json(payload)
         return self.session_id

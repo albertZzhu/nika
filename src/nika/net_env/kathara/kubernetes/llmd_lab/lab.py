@@ -5,6 +5,11 @@ All nodes connect to a single bridged switch and use the internet for downloadin
 """
 
 import os
+import shutil
+import tarfile
+import tempfile
+import urllib.request
+from pathlib import Path
 
 from Kathara.manager.Kathara import Kathara
 from Kathara.model.Lab import Lab
@@ -17,11 +22,33 @@ _K3S_IMAGE = "rancher/k3s"
 _BASE_IMAGE = "kathara/base"
 
 _K3S_ULIMITS = ["nproc=65535", "nofile=65535"]
+_HELM_VERSION = "v3.16.4"
+_HELM_ARCHIVE_URL = f"https://get.helm.sh/helm-{_HELM_VERSION}-linux-amd64.tar.gz"
+
+
+def _ensure_helm_binary() -> Path:
+    """Download Helm on the host (k3s busybox wget has no HTTPS) and stage it for Kathara."""
+    cache_dir = Path.home() / ".nika_cache" / "helm" / _HELM_VERSION
+    helm_bin = cache_dir / "helm"
+    if helm_bin.is_file() and os.access(helm_bin, os.X_OK):
+        return helm_bin
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / "helm.tgz"
+        urllib.request.urlretrieve(_HELM_ARCHIVE_URL, archive)
+        with tarfile.open(archive, "r:gz") as tar:
+            member = tar.getmember("linux-amd64/helm")
+            tar.extract(member, path=tmp, filter="data")
+        extracted = Path(tmp) / "linux-amd64" / "helm"
+        shutil.copy2(extracted, helm_bin)
+        helm_bin.chmod(0o755)
+    return helm_bin
 
 
 class LLMDInferenceCluster(NetworkEnvBase):
     LAB_NAME = "llmd_lab"
-    VERIFY_MAX_WAIT_SEC = 1200
+    VERIFY_MAX_WAIT_SEC = 1800
     VERIFY_RETRY_DELAY_SEC = 20
     TOPO_LEVEL = "hard"
     TOPO_SIZE = None
@@ -88,6 +115,15 @@ class LLMDInferenceCluster(NetworkEnvBase):
         client = self.lab.new_machine("client", **{"image": _BASE_IMAGE})
         self.lab.connect_machine_to_link("client", "A")
         all_machines["client"] = client
+
+        # Stage Helm into controller FS (busybox wget cannot fetch HTTPS).
+        helm_bin = _ensure_helm_binary()
+        helm_stage = Path(cur_path) / "controller" / "usr" / "local" / "bin"
+        helm_stage.mkdir(parents=True, exist_ok=True)
+        staged_helm = helm_stage / "helm"
+        if not staged_helm.is_file():
+            shutil.copy2(helm_bin, staged_helm)
+            staged_helm.chmod(0o755)
 
         # Load per-machine configuration directories and startup scripts
         for name, m in all_machines.items():

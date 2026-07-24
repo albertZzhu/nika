@@ -137,6 +137,10 @@ class FakeRuntime:
             return "101.0.0.1"
         if command == "kubectl get pods -n metallb-system --no-headers":
             return "speaker Running"
+        if command.startswith("kubectl get gateway -n llm-d llm-d-gateway"):
+            return "200.0.0.240"
+        if command == "kubectl get pods -n agentgateway-system --no-headers":
+            return "agentgateway Running"
         if command == "kubectl get gateway -A --no-headers":
             return "default pd-gateway"
         return ""

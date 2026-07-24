@@ -1,4 +1,4 @@
-"""Claude Code CLI subprocess adapter for LangGraph nodes.
+"""Claude Code CLI subprocess adapter for diagnosis/submission phases.
 
 Each ``ClaudeWorker`` instance drives one ``claude -p`` invocation inside an
 isolated, per-session workspace.  It handles:
@@ -37,6 +37,7 @@ from agent.local_cli.claude_cli.config import (
     use_bare_claude_mode,
 )
 from agent.utils.loggers import MessageLogger
+from agent.sandbox.sbx.exec import exec_in_sandbox, sandbox_name_from_env
 from agent.utils.mcp_client import begin_submission_mcp_phase, load_session_mcp_config
 from agent.utils.phases import PHASES, SUBMISSION
 from agent.utils.skills import prepare_claude_workspace, skills_enabled
@@ -66,7 +67,7 @@ def _build_mcp_json(servers: dict) -> str:
 
 
 class ClaudeWorker:
-    """Run one non-interactive ``claude -p`` invocation as a LangGraph node.
+    """Run one non-interactive ``claude -p`` invocation for a pipeline phase.
 
     Parameters
     ----------
@@ -146,14 +147,16 @@ class ClaudeWorker:
         """Execute ``claude -p`` and return the final assistant message.
 
         Returns an ``"ERROR: ..."`` string on subprocess failure or timeout
-        rather than raising, so the LangGraph graph can continue to the
+        rather than raising, so the two-phase pipeline can continue to the
         submission phase with a degraded report.
         """
         self._setup_workspace()
 
         env = prepare_claude_subprocess_env()
-        # --bare disables Claude Code project skills (including the Skill tool).
-        bare = use_bare_claude_mode() and not skills_enabled()
+        # API-key / token mode needs --bare so Claude uses env credentials
+        # (including set-custom placeholders) instead of prompting for /login.
+        # Subscription / OAuth mode must not use --bare.
+        bare = use_bare_claude_mode()
 
         assert self._mcp_config_path is not None
         cmd = [
@@ -182,14 +185,21 @@ class ClaudeWorker:
         )
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                env=env,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.workspace),
-            )
+            if sandbox_name_from_env():
+                proc = await exec_in_sandbox(
+                    cmd,
+                    env=env,
+                    cwd=str(self.workspace),
+                )
+            else:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    env=env,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(self.workspace),
+                )
             returncode, final_result, stderr_text = await self._stream_subprocess(proc)
         except asyncio.TimeoutError:
             self._logger.log(

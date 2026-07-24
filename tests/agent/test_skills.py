@@ -24,6 +24,7 @@ from tests.agent._assertions import (
     marker_before_first_mcp_tool,
     skill_invoked,
 )
+from tests.agent.sandbox_support import SANDBOX_E2E_SUPERSEDED
 from tests.support.integration_base import OrderedPipelineTestCase
 from tests.support.integration_pipeline import (
     ClabCommonPipelineSteps,
@@ -211,6 +212,7 @@ class _SkillPipelineMixin:
         assert_submission_fields(self.session_dir)
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not claude_sdk_available(),
     reason="claude-agent-sdk + ANTHROPIC credentials required",
@@ -230,6 +232,7 @@ class ClaudeSdkSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not claude_cli_available(), reason="Claude CLI + ANTHROPIC credentials required"
 )
@@ -248,6 +251,7 @@ class ClaudeCliSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not codex_cli_available(), reason="Codex CLI and OpenAI credentials required"
 )
@@ -267,6 +271,7 @@ class CodexCliSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not codex_sdk_available(), reason="openai-codex + ~/.codex/auth.json required"
 )
@@ -294,6 +299,7 @@ class _ClabSkillPipelineMixin(_SkillPipelineMixin):
         self._step_inject_failure()
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and claude_sdk_available()),
     reason="containerlab/gnmic/Docker or claude-agent-sdk credentials required",
@@ -307,6 +313,7 @@ class ClaudeSdkClabSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and claude_cli_available()),
     reason="containerlab/gnmic/Docker or Claude CLI credentials required",
@@ -320,6 +327,7 @@ class ClaudeCliClabSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and codex_cli_available()),
     reason="containerlab/gnmic/Docker or Codex CLI credentials required",
@@ -334,6 +342,7 @@ class CodexCliClabSkillPipelineTest(
         self._step_close_and_verify(self.agent_id)
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and codex_sdk_available()),
     reason="containerlab/gnmic/Docker or openai-codex credentials required",

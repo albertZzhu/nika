@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from agent.sandbox.sbx.auth import apply_codex_auth
 from agent.local_cli.codex_cli.codex_display import format_codex_event
 from agent.local_cli.codex_cli.codex_worker import _build_mcp_toml
 from agent.sdk.codex_sdk.config import validate_reasoning_effort
@@ -82,19 +83,7 @@ class CodexSdkWorker:
                 capture_output=True,
             )
 
-        auth_link = self._codex_home / "auth.json"
-        global_auth = Path.home() / ".codex" / "auth.json"
-        if not auth_link.exists() and global_auth.exists():
-            auth_link.symlink_to(global_auth)
-        elif not auth_link.exists():
-            import os
-
-            api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-            if api_key:
-                auth_link.write_text(
-                    json.dumps({"OPENAI_API_KEY": api_key, "auth_mode": "apikey"}),
-                    encoding="utf-8",
-                )
+        apply_codex_auth(self._codex_home)
 
         prepare_codex_workspace(self.workspace)
 

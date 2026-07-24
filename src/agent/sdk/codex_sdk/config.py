@@ -1,14 +1,32 @@
-"""Configuration helpers for sdk.codex_sdk (local ~/.codex/auth.json)."""
+"""Configuration helpers for sdk.codex_sdk."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from agent.local_cli.codex_cli.codex_worker import REASONING_EFFORT_LEVELS
 
 
 def codex_sdk_local_auth_available() -> bool:
-    """True when local Codex auth exists (``codex login``)."""
+    """True when Codex credentials are available for sandbox or local use.
+
+    Accepts ``DEEPSEEK_API_KEY`` / ``OPENAI_API_KEY``, an existing ``openai``
+    sbx secret (API key or OAuth), or a host ``~/.codex/auth.json`` for
+    non-sandbox tooling. Host auth files are never copied into Docker Sandboxes.
+    """
+    if (
+        os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        or os.environ.get("OPENAI_API_KEY", "").strip()
+    ):
+        return True
+    try:
+        from agent.sandbox.sbx.credentials import sbx_openai_credential_available
+
+        if sbx_openai_credential_available():
+            return True
+    except Exception:
+        pass
     return (Path.home() / ".codex" / "auth.json").is_file()
 
 

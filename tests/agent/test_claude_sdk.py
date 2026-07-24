@@ -11,6 +11,7 @@ from agent.sdk.claude_sdk.config import (
 from agent.sdk.mcp import to_sdk_mcp_servers
 from nika.utils.session_store import SessionStore
 from tests.agent._assertions import assert_phase_messages, assert_submission_fields
+from tests.agent.sandbox_support import SANDBOX_E2E_SUPERSEDED
 from tests.support.integration_base import OrderedPipelineTestCase
 from tests.support.integration_pipeline import (
     ClabCommonPipelineSteps,
@@ -41,9 +42,15 @@ class ClaudeSdkConfigTest:
         assert env["NIKA_SESSION_ID"] == "sess-abc"
 
     def test_prepare_env_requires_credentials(self) -> None:
-        with unittest.mock.patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(RuntimeError):
-                prepare_claude_sdk_env(session_id="sess-abc")
+        with (
+            unittest.mock.patch.dict(os.environ, {}, clear=True),
+            unittest.mock.patch(
+                "agent.sdk.claude_sdk.config.claude_sbx_secret_available",
+                return_value=False,
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            prepare_claude_sdk_env(session_id="sess-abc")
 
     def test_resolve_claude_sdk_model_explicit(self) -> None:
         with unittest.mock.patch.dict(os.environ, {}, clear=True):
@@ -77,6 +84,7 @@ class ClaudeSdkMcpTest:
             assert claude_sdk_credentials_available()
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not claude_sdk_available(),
     reason="claude-agent-sdk + ANTHROPIC credentials required",
@@ -112,6 +120,7 @@ class ClaudeSdkAgentPipelineTest(CommonPipelineSteps, OrderedPipelineTestCase):
         self._step_eval_metrics()
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and claude_sdk_available()),
     reason="containerlab/gnmic/Docker or claude-agent-sdk credentials not available",

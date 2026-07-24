@@ -130,7 +130,6 @@ class IntegrationMixin:
         max_steps: int | None = None,
         reasoning_effort: str | None = None,
         session_id: str | None = None,
-        sandbox: bool = False,
     ) -> None:
         from nika.workflows.agent.run import start_agent
 
@@ -142,7 +141,6 @@ class IntegrationMixin:
             session_id=session_id or getattr(self, "session_id", None),
             reasoning_effort=reasoning_effort,
             stream_output=False,
-            sandbox=sandbox,
         )
 
     def _session_row(self, session_id: str | None = None) -> dict:
@@ -194,7 +192,7 @@ class IntegrationMixin:
         problem: str,
         topo_size: str = "",
     ) -> dict[str, str]:
-        from tests.nika.workflows.benchmark.helpers import (
+        from tests.benchmark.helpers import (
             inject_params_from_benchmark_yaml,
         )
 

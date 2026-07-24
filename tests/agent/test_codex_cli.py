@@ -16,6 +16,7 @@ from agent.local_cli.codex_cli.codex_worker import (
 from agent.utils.phases import DIAGNOSIS, SUBMISSION
 from nika.utils.session_store import SessionStore
 from tests.agent._assertions import assert_submission_fields
+from tests.agent.sandbox_support import SANDBOX_E2E_SUPERSEDED
 from tests.support.integration_base import OrderedPipelineTestCase
 from tests.support.integration_pipeline import (
     ClabCommonPipelineSteps,
@@ -175,6 +176,7 @@ class CodexDisplayTest:
         assert format_codex_event({"type": "some_unknown_type"}) is None
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not codex_cli_available(), reason="Codex CLI and OpenAI credentials required"
 )
@@ -247,6 +249,7 @@ class CodexCliAgentPipelineTest(CommonPipelineSteps, OrderedPipelineTestCase):
         self._step_eval_metrics()
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and codex_cli_available()),
     reason="containerlab/gnmic/Docker or Codex CLI credentials not available",

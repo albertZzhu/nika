@@ -3,8 +3,12 @@ ip address add 200.0.0.1/24 dev eth0
 kubectl api-versions &> /dev/null
 while [[ $? != 0 ]]; do sleep 1; kubectl api-versions &> /dev/null; done
 
-mkdir -p /usr/local/bin
-curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+# Helm is staged onto the controller by lab.py (k3s busybox wget has no HTTPS).
+chmod +x /usr/local/bin/helm 2>/dev/null || true
+if [ ! -x /usr/local/bin/helm ]; then
+  echo "helm binary missing at /usr/local/bin/helm" >&2
+  exit 1
+fi
 
 kubectl apply -f /k8s/metallb.yaml
 
@@ -31,6 +35,20 @@ helm upgrade --install agentgateway \
   --version ${AGENTGATEWAY_VERSION} \
   --set inferenceExtension.enabled=true
 
+kubectl wait -n agentgateway-system --for=condition=ready pod --all --timeout 24h
+
 for f in $(ls /k8s/pd-*.yaml | sort); do
   kubectl apply -f "$f"
+done
+
+kubectl wait -n llm-d --for=condition=ready pod -l app=llm-d-epp --timeout 24h
+kubectl wait -n llm-d --for=condition=ready pod -l llm-d.ai/role=prefill --timeout 24h
+kubectl wait -n llm-d --for=condition=ready pod -l llm-d.ai/role=decode --timeout 24h
+
+while true; do
+  GW_ADDR=$(kubectl get gateway -n llm-d llm-d-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+  if [ -n "$GW_ADDR" ]; then
+    break
+  fi
+  sleep 5
 done

@@ -1,6 +1,19 @@
 """Agent type registry used by ``nika agent run``."""
 
+import os
 from typing import Any
+
+from agent.sandbox.config import ENV_SANDBOX_EXECUTION
+
+SANDBOX_AGENT_TYPES = frozenset(
+    {
+        "local_cli.codex_cli",
+        "local_cli.claude_cli",
+        "sdk.codex_sdk",
+        "sdk.claude_sdk",
+        "community.sade",
+    }
+)
 
 
 def create_agent(
@@ -14,7 +27,16 @@ def create_agent(
     stream_output: bool = True,
 ) -> Any:
     """Instantiate an agent for ``agent_type``."""
-    match agent_type.lower():
+    normalized_type = agent_type.lower()
+    if (
+        normalized_type in SANDBOX_AGENT_TYPES
+        and os.environ.get(ENV_SANDBOX_EXECUTION) != "1"
+    ):
+        raise RuntimeError(
+            f"Agent {agent_type!r} can only run inside the Docker sandbox"
+        )
+
+    match normalized_type:
         case "byo.langgraph":
             from agent.byo.langgraph.react_agent import BasicReActAgent
 

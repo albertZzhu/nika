@@ -8,6 +8,7 @@ from nika.net_env.verify import (
     build_lab_verify_result,
     exec_or_empty,
     host_has_ipv4,
+    http_ok,
     k8s_ready_node_count,
     nodes_deployed,
     ping_ok,
@@ -29,10 +30,17 @@ def verify_llmd_lab(runtime: LabRuntime, *, scenario_name: str) -> dict[str, Any
         runtime, "controller", "kubectl get nodes --no-headers", timeout=60
     )
     ready_nodes = k8s_ready_node_count(nodes)
-    gateway = exec_or_empty(
+    gateway_addr = exec_or_empty(
         runtime,
         "controller",
-        "kubectl get gateway -A --no-headers",
+        "kubectl get gateway -n llm-d llm-d-gateway "
+        "-o jsonpath={.status.addresses[0].value}",
+        timeout=60,
+    ).strip()
+    agentgateway = exec_or_empty(
+        runtime,
+        "controller",
+        "kubectl get pods -n agentgateway-system --no-headers",
         timeout=60,
     )
     checks = {
@@ -48,11 +56,13 @@ def verify_llmd_lab(runtime: LabRuntime, *, scenario_name: str) -> dict[str, Any
             "kubectl get pods -n metallb-system --no-headers",
             timeout=60,
         ),
-        "gateway_resource_present": bool(gateway.strip()),
+        "agentgateway_ready": "Running" in agentgateway,
+        "gateway_addressed": gateway_addr.startswith("200.0.0."),
+        "models_http": http_ok(runtime, "client", "http://llmd/v1/models"),
     }
     return build_lab_verify_result(
         scenario_name=scenario_name,
         verified=all(checks.values()),
         checks=checks,
-        details={"ready_nodes": ready_nodes},
+        details={"ready_nodes": ready_nodes, "gateway_addr": gateway_addr},
     )

@@ -12,8 +12,8 @@ from typing import Any
 from agent.sdk.claude_sdk.config import resolve_claude_sdk_model
 from agent.sdk.claude_sdk.phases.diagnosis import ClaudeSdkDiagnosisPhase
 from agent.sdk.claude_sdk.phases.submission import ClaudeSdkSubmissionPhase
+from agent.sandbox.sdk_context import resolve_sdk_session_fields
 from agent.utils.phases import DIAGNOSIS, SUBMISSION
-from nika.utils.session import Session
 
 
 class ClaudeSdkAgent:
@@ -32,12 +32,7 @@ class ClaudeSdkAgent:
         self.max_steps = max_steps
         self._stream_output = stream_output
 
-        session = Session()
-        session.load_running_session(session_id=session_id)
-        self.session = session
-        self.session_dir: str = session.session_dir
-
-        scenario_name: str = getattr(session, "scenario_name", "")
+        self.session_dir, scenario_name = resolve_sdk_session_fields(session_id)
 
         self._diagnosis_phase = ClaudeSdkDiagnosisPhase(
             session_id=session_id,

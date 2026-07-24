@@ -3,11 +3,13 @@
 NIKA drives ``claude -p`` as a subprocess.  Authentication supports:
 
 1. **Environment API key** — ``ANTHROPIC_API_KEY`` (native Anthropic or any
-   provider that accepts the standard header).
+   provider that accepts the standard header). Synced into ``sbx secret`` for
+   sandbox runs; the microVM only sees a proxy-managed sentinel.
 2. **Environment token + base URL** — ``ANTHROPIC_AUTH_TOKEN`` with optional
    ``ANTHROPIC_BASE_URL`` (e.g. DeepSeek's Anthropic-compatible endpoint).
-3. **Claude Code login** — ``claude auth login`` OAuth session (no env vars;
-   subprocess runs without ``--bare`` so the CLI can read stored credentials).
+3. **Claude subscription / OAuth** — authenticate with ``/login`` so the host
+   ``anthropic`` sbx secret is stored (never copy ``~/.claude`` into the sandbox).
+   Subprocess runs without ``--bare`` so OAuth can be used.
 
 Model selection reads from env when ``-m`` / ``--model`` is not passed:
 
@@ -53,6 +55,7 @@ def has_env_claude_credentials() -> bool:
     return bool(
         os.environ.get("ANTHROPIC_API_KEY", "").strip()
         or os.environ.get("ANTHROPIC_AUTH_TOKEN", "").strip()
+        or os.environ.get("DEEPSEEK_API_KEY", "").strip()
     )
 
 
@@ -76,12 +79,26 @@ def claude_cli_logged_in(*, timeout_s: float = 10.0) -> bool:
         return False
 
 
+def claude_sbx_secret_available() -> bool:
+    """True when the host sbx secret store has an ``anthropic`` entry."""
+    from agent.sandbox.sbx.credentials import sbx_anthropic_credential_available
+
+    return sbx_anthropic_credential_available()
+
+
+def claude_subscription_mode() -> bool:
+    """True when Claude is authenticated via sbx secret without env API keys."""
+    from agent.sandbox.sbx.credentials import anthropic_subscription_mode
+
+    return anthropic_subscription_mode()
+
+
 def claude_credentials_available(*, check_cli_login: bool = True) -> bool:
-    """True when the Claude CLI is installed and credentials are configured."""
+    """True when Claude credentials are configured for host or sandbox use."""
+    if has_env_claude_credentials() or claude_sbx_secret_available():
+        return True
     if shutil.which("claude") is None:
         return False
-    if has_env_claude_credentials():
-        return True
     if not check_cli_login:
         return False
     return claude_cli_logged_in()
@@ -91,8 +108,11 @@ def use_bare_claude_mode() -> bool:
     """Whether to pass ``--bare`` to the Claude subprocess.
 
     Bare mode isolates the run to environment-based API auth and skips
-    keychain / OAuth reads.  Use it when credentials come from ``.env``.
+    keychain / OAuth reads.  Use it for env API-key mode only — never for
+    Claude subscription / OAuth (``/login``) which needs non-bare mode.
     """
+    if claude_subscription_mode():
+        return False
     return has_env_claude_credentials()
 
 
@@ -102,16 +122,22 @@ def prepare_claude_subprocess_env(
     """Build the subprocess environment for ``claude -p``.
 
     * Copies *base* or ``os.environ``.
-    * Maps ``ANTHROPIC_AUTH_TOKEN`` → ``ANTHROPIC_API_KEY`` when the latter is unset
-      (required by ``--bare`` and some third-party Anthropic-compatible APIs).
-    * Forwards ``ANTHROPIC_BASE_URL`` unchanged when present.
+    * Maps ``ANTHROPIC_AUTH_TOKEN`` / ``DEEPSEEK_API_KEY`` → ``ANTHROPIC_API_KEY``
+      when the latter is unset.
+    * Defaults ``ANTHROPIC_BASE_URL`` to DeepSeek Anthropic-compatible endpoint
+      when using DeepSeek keys without an explicit base URL.
     """
     env = dict(base if base is not None else os.environ)
-    if (
-        env.get("ANTHROPIC_AUTH_TOKEN", "").strip()
-        and not env.get("ANTHROPIC_API_KEY", "").strip()
+    if not env.get("ANTHROPIC_API_KEY", "").strip():
+        for key in ("ANTHROPIC_AUTH_TOKEN", "DEEPSEEK_API_KEY"):
+            if env.get(key, "").strip():
+                env["ANTHROPIC_API_KEY"] = env[key]
+                break
+    if not env.get("ANTHROPIC_BASE_URL", "").strip() and (
+        env.get("DEEPSEEK_API_KEY", "").strip()
+        or env.get("ANTHROPIC_AUTH_TOKEN", "").strip()
     ):
-        env["ANTHROPIC_API_KEY"] = env["ANTHROPIC_AUTH_TOKEN"]
+        env["ANTHROPIC_BASE_URL"] = "https://api.deepseek.com/anthropic"
     return env
 
 
@@ -125,8 +151,15 @@ def describe_claude_auth() -> dict[str, Any]:
         )
         return {
             "mode": mode,
-            "bare": True,
+            "bare": use_bare_claude_mode(),
             "base_url": os.environ.get("ANTHROPIC_BASE_URL", "").strip() or None,
+            "model_default": default_claude_model(),
+        }
+    if claude_subscription_mode():
+        return {
+            "mode": "claude_subscription",
+            "bare": False,
+            "base_url": None,
             "model_default": default_claude_model(),
         }
     if claude_cli_logged_in():
@@ -140,5 +173,5 @@ def describe_claude_auth() -> dict[str, Any]:
         "mode": "none",
         "bare": False,
         "base_url": None,
-        "model_default": default_claude_model(),
+        "model_default": None,
     }

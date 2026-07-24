@@ -17,6 +17,7 @@ from agent.local_cli.claude_cli.config import (
 from agent.utils.phases import DIAGNOSIS, SUBMISSION
 from nika.utils.session_store import SessionStore
 from tests.agent._assertions import assert_submission_fields
+from tests.agent.sandbox_support import SANDBOX_E2E_SUPERSEDED
 from tests.support.integration_base import OrderedPipelineTestCase
 from tests.support.integration_pipeline import (
     ClabCommonPipelineSteps,
@@ -55,6 +56,16 @@ class ClaudeConfigTest:
         ):
             assert use_bare_claude_mode()
             assert has_env_claude_credentials()
+
+    def test_subscription_mode_disables_bare(self) -> None:
+        with (
+            unittest.mock.patch.dict(os.environ, {}, clear=True),
+            unittest.mock.patch(
+                "agent.local_cli.claude_cli.config.claude_subscription_mode",
+                return_value=True,
+            ),
+        ):
+            assert not use_bare_claude_mode()
 
 
 class ClaudeMcpJsonTest:
@@ -115,9 +126,7 @@ class ClaudeWorkerConfigTest:
 class ClaudeDisplayTest:
     """Claude Code stream-json event formatting."""
 
-    @pytest.fixture(scope="class", autouse=True)
-    def _setup_class(cls) -> None:
-        cls.sample_model = default_claude_model()
+    sample_model = "model-a"
 
     def test_system_init_event_with_string_servers(self) -> None:
         event = {
@@ -153,7 +162,7 @@ class ClaudeDisplayTest:
 
     def test_thinking_tokens_skipped(self) -> None:
         event = {"type": "system", "subtype": "thinking_tokens", "estimated_tokens": 42}
-        assert format_claude_event(event is None)
+        assert format_claude_event(event) is None
         assert not should_log_claude_event(event)
 
     def test_should_log_keeps_meaningful_events(self) -> None:
@@ -211,9 +220,10 @@ class ClaudeDisplayTest:
         assert "Not logged in" in (rendered or "")
 
     def test_unknown_type_returns_none(self) -> None:
-        assert format_claude_event({"type": "some_unknown"} is None)
+        assert format_claude_event({"type": "some_unknown"}) is None
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not claude_cli_available(), reason="Claude Code CLI and credentials required"
 )
@@ -287,6 +297,7 @@ class ClaudeAgentPipelineTest(CommonPipelineSteps, OrderedPipelineTestCase):
         self._step_eval_metrics()
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and claude_cli_available()),
     reason="containerlab/gnmic/Docker or Claude CLI credentials not available",

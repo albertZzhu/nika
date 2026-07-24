@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from langchain_core.tools import ToolException
 
-from nika.service.mcp_gateway.lifecycle import ENV_GATEWAY_AGENT_URL, ENV_GATEWAY_URL
+from agent.sandbox.config import ENV_GATEWAY_AGENT_URL, ENV_GATEWAY_URL
 from nika.service.mcp_server.registry import (
     MCP_SERVER_SPECS,
     SUBMISSION_SERVER,
@@ -17,6 +17,7 @@ from nika.service.mcp_server.registry import (
 
 __all__ = [
     "MCPServerConfig",
+    "SESSION_HEADER",
     "harden_mcp_tools",
     "select_diagnosis_servers",
     "select_session_servers",

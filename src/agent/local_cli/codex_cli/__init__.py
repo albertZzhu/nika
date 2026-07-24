@@ -1,19 +1,28 @@
-"""LangGraph + Codex CLI agents.
+"""Codex CLI agents.
 
-Same two-phase orchestration as ``agent.byo.langgraph.react_agent.BasicReActAgent``,
-but worker nodes invoke ``codex exec`` subprocesses instead of LangChain
-``create_agent`` graphs.
+Native two-phase orchestration (diagnosis → submission) with workers that
+invoke ``codex exec`` subprocesses.
 
 Layout::
 
     local_cli/codex_cli/
-      agent.py                    # CodexCliAgent — StateGraph orchestrator
+      agent.py                    # CodexCliAgent — sequential phase runner
       codex_worker.py             # CodexWorker — subprocess adapter
       phases/
         diagnosis.py              # CodexCliDiagnosisPhase
         submission.py             # CodexCliSubmissionPhase
 """
 
-from agent.local_cli.codex_cli.agent import CodexCliAgent
+from __future__ import annotations
+
+from typing import Any
 
 __all__ = ["CodexCliAgent"]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "CodexCliAgent":
+        from agent.local_cli.codex_cli.agent import CodexCliAgent
+
+        return CodexCliAgent
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

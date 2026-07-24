@@ -1,4 +1,4 @@
-"""Codex CLI subprocess adapter for LangGraph nodes.
+"""Codex CLI subprocess adapter for diagnosis/submission phases.
 
 Each ``CodexWorker`` instance drives one ``codex exec`` invocation inside an
 isolated, per-session workspace.  It handles:
@@ -30,6 +30,8 @@ from pathlib import Path
 
 from agent.local_cli.codex_cli.codex_display import format_codex_event
 from agent.utils.loggers import MessageLogger
+from agent.sandbox.sbx.auth import apply_codex_auth
+from agent.sandbox.sbx.exec import exec_in_sandbox, sandbox_name_from_env
 from agent.utils.mcp_client import begin_submission_mcp_phase, load_session_mcp_config
 from agent.utils.phases import PHASES, SUBMISSION
 from agent.utils.skills import prepare_codex_workspace
@@ -124,7 +126,7 @@ def _build_mcp_toml(servers: dict) -> str:
 
 
 class CodexWorker:
-    """Run one non-interactive ``codex exec`` invocation as a LangGraph node.
+    """Run one non-interactive ``codex exec`` invocation for a pipeline phase.
 
     Parameters
     ----------
@@ -206,18 +208,8 @@ class CodexWorker:
                 capture_output=True,
             )
 
-        # Sym-link the real auth.json so authentication keeps working.
-        auth_link = self._codex_home / "auth.json"
-        global_auth = Path.home() / ".codex" / "auth.json"
-        if not auth_link.exists() and global_auth.exists():
-            auth_link.symlink_to(global_auth)
-        elif not auth_link.exists():
-            api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-            if api_key:
-                auth_link.write_text(
-                    json.dumps({"OPENAI_API_KEY": api_key, "auth_mode": "apikey"}),
-                    encoding="utf-8",
-                )
+        # Populate auth.json from staged host auth, host symlink, or env API key.
+        apply_codex_auth(self._codex_home)
 
         prepare_codex_workspace(self.workspace)
         self._write_mcp_config()
@@ -245,7 +237,7 @@ class CodexWorker:
         """Execute ``codex exec`` and return the final assistant message.
 
         Returns an ``"ERROR: ..."`` string on subprocess failure or timeout
-        rather than raising, so the LangGraph graph can continue to the
+        rather than raising, so the two-phase pipeline can continue to the
         submission phase with a degraded report.
         """
         self._setup_workspace()
@@ -284,14 +276,21 @@ class CodexWorker:
         self._last_progress_at = None
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                env=env,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.workspace),
-            )
+            if sandbox_name_from_env():
+                proc = await exec_in_sandbox(
+                    cmd,
+                    env=env,
+                    cwd=str(self.workspace),
+                )
+            else:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    env=env,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(self.workspace),
+                )
             returncode, stderr_text = await self._stream_subprocess(proc)
         except CodexSubprocessStallError as exc:
             self._logger.log(

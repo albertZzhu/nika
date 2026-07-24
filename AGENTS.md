@@ -60,7 +60,7 @@
 - Agent runs should write standard artifacts such as `messages.jsonl` and `submission.json` in the session result directory.
 - Shared agent skills live under `src/agent/skills/`; helpers live in `agent.utils.skills`. See `docs/agent-skills.md`.
 - SADE keeps its own skill library under `src/agent/community/sade/.claude/`.
-- Sandbox execution is implemented under `src/agent/sandbox/` and documented in `docs/agent-sandbox.md`; keep repository-level guidance focused on behavior, not image build details.
+- Sandbox execution uses Docker Sandboxes (`sbx`) under `src/agent/sandbox/` with official `codex` / `claude` / `shell` templates. Behavior: `docs/agent-sandbox.md`; tests: `tests/README.md`.
 
 ## Formatting and Linting
 

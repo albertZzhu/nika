@@ -16,6 +16,7 @@ Reference: SADE (arXiv:2605.04530), built on NIKA.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -34,17 +35,18 @@ from claude_agent_sdk import (
 from dotenv import load_dotenv
 
 from agent.sdk.mcp import to_sdk_mcp_servers
+from agent.sandbox.sdk_context import resolve_sdk_session_fields
 from agent.utils.loggers import MessageLogger
 from agent.utils.mcp_client import load_session_mcp_config
 from agent.utils.phases import DIAGNOSIS
 from agent.utils.skills import CLAUDE_SETTING_SOURCES, skills_enabled
-from nika.utils.logger import system_logger
-from nika.utils.session import Session
 
 from .config import prepare_sade_sdk_env
 from .prompts.sade_prompt import SADE_PROMPT
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # Directory holding this agent's `.claude/` skill library, `CLAUDE.md`, and the
 # `h.py` helper launcher. The Claude Code SDK uses it as the working directory
@@ -105,20 +107,19 @@ class SadeAgent:
         self.session_id = session_id
         self.model = model
         self.max_steps = max_steps
-        self.session = Session()
-        self.session.load_running_session(session_id=session_id)
+        self.session_dir, scenario_name = resolve_sdk_session_fields(session_id)
 
         self.mcp_servers = to_sdk_mcp_servers(
             load_session_mcp_config(
                 session_id,
-                self.session.scenario_name,
+                scenario_name,
             )
         )
 
     async def run(self, task_description: str) -> dict[str, Any]:
         sdk_env = prepare_sade_sdk_env(session_id=self.session_id)
-        logger = MessageLogger(agent=AGENT_TAG, session_dir=self.session.session_dir)
-        system_logger.info(f"sade: starting session {self.session_id}")
+        msg_logger = MessageLogger(agent=AGENT_TAG, session_dir=self.session_dir)
+        logger.info("sade: starting session %s", self.session_id)
 
         options_kwargs: dict[str, Any] = {
             "system_prompt": SADE_PROMPT,
@@ -134,7 +135,7 @@ class SadeAgent:
 
         options = ClaudeAgentOptions(**options_kwargs)
 
-        logger.log(
+        msg_logger.log(
             "llm_start",
             {
                 "messages": {"role": "user", "content": task_description},
@@ -163,7 +164,7 @@ class SadeAgent:
             """
             nonlocal turn_text
             if turn_text:
-                logger.log(
+                msg_logger.log(
                     "llm_end", {"text": "\n".join(turn_text), "usage_metadata": {}}
                 )
                 turn_text = []
@@ -172,8 +173,9 @@ class SadeAgent:
             await client.query(task_description)
             async for message in client.receive_messages():
                 if isinstance(message, SystemMessage) and message.subtype == "init":
-                    system_logger.info(
-                        f"sade: session started - {message.data.get('session_id')}"
+                    logger.info(
+                        "sade: session started - %s",
+                        message.data.get("session_id"),
                     )
                 elif isinstance(message, AssistantMessage):
                     for block in message.content:
@@ -186,7 +188,7 @@ class SadeAgent:
                             # Emit the reasoning that led to this call, then the
                             # tool call (llm_end -> tool_start order, like NIKA).
                             _flush_turn()
-                            logger.log(
+                            msg_logger.log(
                                 "tool_start",
                                 {
                                     "tool": {"name": block.name},
@@ -203,9 +205,9 @@ class SadeAgent:
                     for block in content:
                         if isinstance(block, ToolResultBlock):
                             if block.is_error:
-                                logger.log("tool_error", {"output": str(block.content)})
+                                msg_logger.log("tool_error", {"output": str(block.content)})
                             else:
-                                logger.log(
+                                msg_logger.log(
                                     "tool_end",
                                     {
                                         "output": str(block.content),
@@ -225,8 +227,10 @@ class SadeAgent:
                             remaining=remaining,
                         )
                         await client.query(text)
-                        system_logger.info(
-                            f"sade: REMINDER at API turn {api_turn_count}/{self.max_steps}"
+                        logger.info(
+                            "sade: REMINDER at API turn %s/%s",
+                            api_turn_count,
+                            self.max_steps,
                         )
                 elif isinstance(message, ResultMessage):
                     _flush_turn()  # flush any trailing assistant text
@@ -236,11 +240,16 @@ class SadeAgent:
                     out_tokens = md["output_tokens"]
                     # Final `llm_end`: the agent's result text + the authoritative
                     # cumulative token usage (the parser sums usage_metadata).
-                    logger.log("llm_end", {"text": result_text, "usage_metadata": md})
-                    system_logger.info(
-                        f"sade: session complete - stop_reason={message.stop_reason}, "
-                        f"submitted={has_submitted}, api_turns={api_turn_count}, "
-                        f"sdk_turns={message.num_turns}, in_tokens={in_tokens}, out_tokens={out_tokens}"
+                    msg_logger.log("llm_end", {"text": result_text, "usage_metadata": md})
+                    logger.info(
+                        "sade: session complete - stop_reason=%s, submitted=%s, "
+                        "api_turns=%s, sdk_turns=%s, in_tokens=%s, out_tokens=%s",
+                        message.stop_reason,
+                        has_submitted,
+                        api_turn_count,
+                        message.num_turns,
+                        in_tokens,
+                        out_tokens,
                     )
                     break
 

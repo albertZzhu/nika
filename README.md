@@ -48,6 +48,7 @@ NIKA is a unified platform that combines:
 - **Network emulators**: NIKA attaches to state-of-the-art network emulators as backends. Are you a [Kathará](https://www.kathara.org) or [containerlab](https://containerlab.dev) user? you can use NIKA with both.
 - **Fault injection**: Parameterized fault injection (`nika failure describe`, `--set key=value`)
 - **Bring any AI agent**: Easy integration of custom AI agent.
+- **Agent sandbox**: CLI / SDK / SADE agents run in Docker Sandboxes (`sbx` microVMs with official `codex` / `claude` / `shell` templates), isolated per session (workspace + MCP gateway port). Codex uses OpenAI; Claude/SADE use DeepSeek Anthropic-compatible API keys by default.
 - **Zero-touch eval**: Pre-built network scenarios and fault injection mechanisms, with automatic evaluation mechanism.
 - **MCP**: native MCP-based tool support.
 - **Reproducibility**: Reproducible evaluation framework with batch summary (`nika eval summary`). Easy to add new agents to the leaderboard. 
@@ -187,16 +188,83 @@ Each `nika env run` creates a **session** (printed as `session_id=…`). Session
    nika eval clean -y                              # wipe results/, session JSON, and SQLite index
    ```
 
-Full CLI documentation (benchmark batch mode, traffic types, parameter tables, and conventions) lives in **[src/nika/cli/README.md](src/nika/cli/README.md)**. Developer guides: **[Creating Benchmark Tasks](docs/creating-benchmark-tasks.md)** (scenarios, `ProblemBase` faults, benchmark YAML), **[Custom Agents](docs/custom-agents.md)**, and **[Agent Skills](docs/agent-skills.md)**.
+Full CLI documentation (traffic types, parameter tables, and conventions) lives in **[src/nika/cli/README.md](src/nika/cli/README.md)**. Developer guides: **[Creating Benchmark Tasks](docs/creating-benchmark-tasks.md)** (scenarios, `ProblemBase` faults, benchmark YAML), **[Custom Agents](docs/custom-agents.md)**, and **[Agent Skills](docs/agent-skills.md)**.
 
-### Optional: benchmark or traffic from the CLI
+## Benchmark
+
+`nika benchmark run` is the primary evaluation entry point. For each case it deploys the lab, injects the fault, runs the agent, closes the session, and evaluates (metrics by default; pass `--judge` for LLM-as-judge). Cases are defined in YAML under [`benchmark/`](benchmark/); details and stats: **[benchmark/README.md](benchmark/README.md)**.
+
+Shipped datasets:
+
+| File | Role |
+|------|------|
+| `benchmark/benchmark_selected.yaml` | Default curated suite (one case per failure type) |
+| `benchmark/benchmark_full.yaml` | Full scenario × failure matrix |
 
 ```shell
+# Curated suite (default --config)
 nika benchmark run
+
+# Full matrix
+nika benchmark run --config benchmark/benchmark_full.yaml
+
+# Single case (no YAML)
 nika benchmark run dc_clos_bgp --problem bgp_asn_misconfig -s s
-nika benchmark run --result_dir results/list1              
-nika benchmark run --result_dir results/list1 --batch-size 4
+
+# With LLM judge after metrics
 nika benchmark run --judge --judge-provider openai --judge-model gpt-5-mini
+```
+
+### Custom datasets (`--config`)
+
+Point `--config` at your own YAML to run a custom case list. Each row uses the same fields as the shipped files: `scenario`, `problem`, `topo_size` (`s`/`m`/`l`, or null for fixed-size labs), and an `inject` map passed to `nika failure inject`. Authoring and regeneration: **[Creating Benchmark Tasks](docs/creating-benchmark-tasks.md)**, `uv run python benchmark/generate_benchmark.py`.
+
+```yaml
+cases:
+  - scenario: simple_bgp
+    topo_size: null
+    problem: link_down
+    inject:
+      host_name: pc1
+      intf_name: eth0
+```
+
+```shell
+nika benchmark run --config benchmark/my_cases.yaml --result_dir results/my_cases
+```
+
+### Result directories and resume
+
+Use **`--result_dir`** (or `NIKA_RESULT_DIR`) to isolate runs by dataset, model, or agent. Artifacts land under `{result_dir}/{session_id}/`. Resume and skip logic scan **only** that directory.
+
+| Flag | Behavior |
+|------|----------|
+| `--result_dir PATH` | Parent for session outputs (default `results/`) |
+| `--resume` | **Default.** Skip finished cases (matching `benchmark_fingerprint` in `run.json`); clean incomplete sessions and re-run the rest |
+| `--no-resume` | Re-run every YAML row regardless of existing artifacts |
+| `--batch-size N` | Run up to `N` cases in parallel per batch |
+
+```shell
+# Isolate one experiment; resume continues after interrupt
+nika benchmark run --config benchmark/benchmark_selected.yaml \
+  --result_dir results/list1 --batch-size 4
+
+# Same command again → skips completed rows in results/list1 only
+nika benchmark run --config benchmark/benchmark_selected.yaml \
+  --result_dir results/list1 --batch-size 4
+
+# Force a full re-run in that directory
+nika benchmark run --result_dir results/list1 --no-resume
+
+# Aggregate finished sessions under that directory
+nika eval summary --result_dir results/list1
+```
+
+More flags and YAML field details: **[src/nika/cli/README.md](src/nika/cli/README.md)** (`nika benchmark`).
+
+### Traffic (optional)
+
+```shell
 nika traffic list
 nika traffic run od --all-to-host pc1 --mbps 20 --interval 300 --background
 ```
@@ -212,8 +280,28 @@ uv run --with pytest pytest -v
 
 # run only selected test files
 uv run --with pytest pytest tests/nika/runtime/ -v
-uv run pytest tests/nika/workflows/benchmark/test_resume.py -v
+uv run pytest tests/benchmark/test_resume.py -v
 ```
+
+## Agent Sandbox
+
+Non-BYO production agents (`local_cli.*`, `sdk.*`, `community.sade`) run inside **[Docker Sandboxes](https://docs.docker.com/ai/sandboxes/)** (`sbx` microVMs) using official `codex` / `claude` / `shell` templates. The Kathara/Containerlab lab and MCP gateway stay on the host. `byo.*` agents run on the host. Concurrent runs get a per-session microVM, ephemeral workspace, and MCP gateway port (network policy blocks peer ports). Full setup: [docs/agent-sandbox.md](docs/agent-sandbox.md). Sandbox test commands and verification status: [tests/README.md](tests/README.md).
+
+```
+Host (NIKA)                         sbx microVM
+├── Kathara lab + MCP gateway       ├── `codex` / `claude` template     (CLI)
+├── Host phase / SDK orchestration  └── `shell` (+ optional offline wheels) (SDK/SADE)
+├── sbx secret store (real keys)        placeholders only in the VM
+└── results/{session_id}/               workspace: .sandbox_run/
+    (one ephemeral gateway port/session; sbx policy allows only that port)
+```
+
+| Agent | sbx template | Credentials |
+|-------|--------------|-------------|
+| `local_cli.codex_cli` / `sdk.codex_sdk` | `codex` / `shell` | `OPENAI_API_KEY` → `openai` sbx secret, or `sbx secret set -g openai --oauth` |
+| `local_cli.claude_cli` / `sdk.claude_sdk` / `community.sade` | `claude` / `shell` | `DEEPSEEK_API_KEY` or `ANTHROPIC_AUTH_TOKEN` (+ Anthropic-compatible `ANTHROPIC_BASE_URL`), or Claude `/login` |
+
+**Prerequisites:** `sbx login`, KVM, Docker. Optional outbound proxy: `NIKA_SANDBOX_UPSTREAM_PROXY` (see `.env.example`). SDK/SADE extras: `uv sync --extra sdk --prerelease=allow`, `uv sync --extra sade`.
 
 <h1 id="🛠️usage">🛠️ Usage</h1>
 
@@ -244,8 +332,8 @@ src/agent/
 | `byo.langgraph` | `byo/langgraph` | LangGraph `StateGraph` | LangChain ReAct + `load_model()` |
 | `byo.mcp_agent` | `byo/mcp_agent` | mcp-agent `Workflow` | [mcp-agent SDK](https://docs.mcp-agent.com/mcp-agent-sdk/overview) + OpenAI |
 | `byo.autogen` | `byo/autogen` | AutoGen `GraphFlow` | [AutoGen AgentChat](https://microsoft.github.io/autogen/stable/) + OpenAI |
-| `local_cli.codex_cli` | `local_cli/codex_cli` | LangGraph `StateGraph` | `codex exec` subprocess + shared skills |
-| `local_cli.claude_cli` | `local_cli/claude_cli` | LangGraph `StateGraph` | `claude -p` subprocess + shared skills |
+| `local_cli.codex_cli` | `local_cli/codex_cli` | Native two-phase (no LangGraph) | `codex exec` subprocess + shared skills |
+| `local_cli.claude_cli` | `local_cli/claude_cli` | Native two-phase (no LangGraph) | `claude -p` subprocess + shared skills |
 | `community.sade` | `community/sade` | Single Claude Code session + skill library | `claude-agent-sdk` (optional extra `sade`) |
 | `sdk.claude_sdk` | `sdk/claude_sdk` | Native two-phase `ClaudeSDKClient` | `claude-agent-sdk` + shared skills (optional extra `sdk`) |
 | `sdk.codex_sdk` | `sdk/codex_sdk` | Native two-phase `AsyncCodex` | `openai-codex` + shared skills (optional extra `sdk`) |
@@ -319,7 +407,9 @@ nika agent run -a byo.autogen -m gpt-4.1-mini -n 20
 
 ### `local_cli.codex_cli` (`local_cli/codex_cli`)
 
-Requires [Codex CLI](https://developers.openai.com/codex) on `PATH`; auth via `codex login` or `OPENAI_API_KEY`. Workspace: `{result_dir}/{session_id}/codex_workspace/`. Loads shared skills from `src/agent/skills/` when `NIKA_ENABLE_SKILLS=true`.
+Requires [Codex CLI](https://developers.openai.com/codex) on `PATH`. Runs inside Docker Sandboxes (`sbx` `codex` template). Workspace: `{result_dir}/{session_id}/codex_workspace/`. Loads shared skills from `src/agent/skills/` when `NIKA_ENABLE_SKILLS=true`.
+
+Auth: `OPENAI_API_KEY` → sbx `openai` secret, or `sbx secret set -g openai --oauth`.
 
 | Flag | Env | Notes |
 |------|-----|-------|
@@ -327,15 +417,14 @@ Requires [Codex CLI](https://developers.openai.com/codex) on `PATH`; auth via `c
 | `-e` / `--reasoning-effort` | `NIKA_CODEX_REASONING_EFFORT` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 
 ```shell
-codex login
-nika agent run -a local_cli.codex_cli -m gpt-5.4-mini -e medium
+nika agent run -a local_cli.codex_cli -m gpt-5-mini -e medium
 ```
 
 ### `local_cli.claude_cli` (`local_cli/claude_cli`)
 
-Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on `PATH`. Workspace: `{result_dir}/{session_id}/claude_workspace/`. Loads shared skills via `--setting-sources project` when `NIKA_ENABLE_SKILLS=true`.
+Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on `PATH`. Runs inside Docker Sandboxes (`sbx` `claude` template). Workspace: `{result_dir}/{session_id}/claude_workspace/`. Loads shared skills via `--setting-sources project` when `NIKA_ENABLE_SKILLS=true`.
 
-Auth (pick one): `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`, or `claude auth login`.
+Auth (pick one): `DEEPSEEK_API_KEY` / `ANTHROPIC_AUTH_TOKEN` (+ `ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic`), native `ANTHROPIC_API_KEY`, or Claude `/login` subscription on the host.
 
 Model when `-m` omitted (first non-empty): `ANTHROPIC_MODEL` → `CLAUDE_CODE_SUBAGENT_MODEL` → `ANTHROPIC_DEFAULT_SONNET_MODEL`.
 
@@ -346,9 +435,9 @@ nika agent run -a local_cli.claude_cli -m deepseek-v4-flash
 
 ### `sdk.claude_sdk` (`sdk/claude_sdk`)
 
-Native two-phase pipeline via `claude-agent-sdk` `ClaudeSDKClient` sessions (no LangGraph). Requires `uv sync --extra sdk --prerelease=allow`. Loads shared skills when `NIKA_ENABLE_SKILLS=true`.
+Native two-phase pipeline via `claude-agent-sdk` `ClaudeSDKClient` sessions (no LangGraph). Requires `uv sync --extra sdk --prerelease=allow`. Loads shared skills when `NIKA_ENABLE_SKILLS=true`. Runs inside Docker Sandboxes (`sbx` `shell`; optional offline wheels via `NIKA_SANDBOX_OFFLINE_SDK_WHEELS`).
 
-Auth: DeepSeek or Anthropic via `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` (same as `local_cli.claude_cli`).
+Auth: DeepSeek or Anthropic via `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` / `DEEPSEEK_API_KEY` (same as `local_cli.claude_cli`).
 
 | Flag | Env | Notes |
 |------|-----|-------|
@@ -362,9 +451,9 @@ nika agent run -a sdk.claude_sdk -m deepseek-v4-flash
 
 ### `sdk.codex_sdk` (`sdk/codex_sdk`)
 
-Native two-phase pipeline via `openai-codex` `AsyncCodex` threads. Requires `uv sync --extra sdk --prerelease=allow`. Loads shared skills when `NIKA_ENABLE_SKILLS=true`.
+Native two-phase pipeline via `openai-codex` `AsyncCodex` threads. Requires `uv sync --extra sdk --prerelease=allow`. Loads shared skills when `NIKA_ENABLE_SKILLS=true`. Runs inside Docker Sandboxes (`sbx` `shell`; optional offline wheels via `NIKA_SANDBOX_OFFLINE_SDK_WHEELS`).
 
-Auth: local only — `codex login` → `~/.codex/auth.json`.
+Auth: `OPENAI_API_KEY` synced into the built-in `openai` sbx secret, or `sbx secret set -g openai --oauth`.
 
 | Flag | Env | Notes |
 |------|-----|-------|
@@ -372,8 +461,7 @@ Auth: local only — `codex login` → `~/.codex/auth.json`.
 | `-e` / `--reasoning-effort` | `NIKA_CODEX_REASONING_EFFORT` | Same as `local_cli.codex_cli` |
 
 ```shell
-codex login
-nika agent run -a sdk.codex_sdk -m gpt-5.4-mini -e medium
+nika agent run -a sdk.codex_sdk -m gpt-5-mini -e medium
 ```
 
 ### `community.sade` (`community/sade`)

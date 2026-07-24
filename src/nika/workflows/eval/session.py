@@ -226,10 +226,17 @@ def eval_results(
             "--judge-provider and --judge-model are required when run_judge is enabled."
         )
 
-    session = Session()
-    session.load_running_session(session_id=session_id)
-    resolved_session_id = session.session_id
-    close_session(session_id=resolved_session_id, undeploy=destroy_env)
+    resolved_session_id = session_id
+    try:
+        session = Session()
+        session.load_running_session(session_id=session_id)
+        resolved_session_id = session.session_id
+        close_session(session_id=resolved_session_id, undeploy=destroy_env)
+    except FileNotFoundError:
+        # Session may already have been closed by another process while a long
+        # agent run was still in flight; evaluate from results artifacts.
+        if resolved_session_id is None:
+            raise
     run_eval_metrics(session_id=resolved_session_id)
     if run_judge:
         try:

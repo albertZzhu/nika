@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from agent.sdk.claude_sdk.config import prepare_claude_sdk_env
@@ -10,7 +11,8 @@ from agent.utils.loggers import MessageLogger
 from agent.utils.mcp_client import begin_submission_mcp_phase, load_session_mcp_config
 from agent.utils.phases import PHASES, SUBMISSION
 from agent.utils.skills import CLAUDE_SETTING_SOURCES, claude_skills_package_dir
-from nika.utils.logger import system_logger
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_tool_name(name: str) -> str:
@@ -136,9 +138,10 @@ class ClaudeSdkWorker:
                 await client.query(prompt)
                 async for message in client.receive_messages():
                     if isinstance(message, SystemMessage) and message.subtype == "init":
-                        system_logger.info(
-                            f"claude_sdk/{self.phase}: session started - "
-                            f"{message.data.get('session_id')}"
+                        logger.info(
+                            "claude_sdk/%s: session started - %s",
+                            self.phase,
+                            message.data.get("session_id"),
                         )
                     elif isinstance(message, AssistantMessage):
                         for block in message.content:
@@ -186,9 +189,10 @@ class ClaudeSdkWorker:
                         self._logger.log(
                             "llm_end", {"text": result_text, "usage_metadata": md}
                         )
-                        system_logger.info(
-                            f"claude_sdk/{self.phase}: complete - "
-                            f"stop_reason={message.stop_reason}"
+                        logger.info(
+                            "claude_sdk/%s: complete - stop_reason=%s",
+                            self.phase,
+                            message.stop_reason,
                         )
                         break
         except Exception as exc:

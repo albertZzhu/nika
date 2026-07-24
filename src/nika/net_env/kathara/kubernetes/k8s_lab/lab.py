@@ -23,7 +23,7 @@ _K3S_ULIMITS = ["nproc=65535", "nofile=65535"]
 
 class K8sFatTreeBGP(NetworkEnvBase):
     LAB_NAME = "k8s_lab"
-    VERIFY_MAX_WAIT_SEC = 900
+    VERIFY_MAX_WAIT_SEC = 1800
     VERIFY_RETRY_DELAY_SEC = 15
     TOPO_LEVEL = "hard"
     TOPO_SIZE = None

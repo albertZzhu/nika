@@ -41,4 +41,11 @@ def p4_int_prerequisites() -> bool:
 
 
 def privileged_lab_supported() -> bool:
-    return os.geteuid() == 0
+    """k3s labs need Docker privileged containers.
+
+    Host root is not required when the user can talk to the Docker engine
+    (typically via the ``docker`` group); NIKA patches Kathara's root-only gate.
+    """
+    if os.geteuid() == 0:
+        return True
+    return docker_available()

@@ -8,6 +8,7 @@ from agent.sdk.codex_sdk.config import (
 )
 from nika.utils.session_store import SessionStore
 from tests.agent._assertions import assert_phase_messages, assert_submission_fields
+from tests.agent.sandbox_support import SANDBOX_E2E_SUPERSEDED
 from tests.support.integration_base import OrderedPipelineTestCase
 from tests.support.integration_pipeline import (
     ClabCommonPipelineSteps,
@@ -55,6 +56,7 @@ class CodexSdkMcpTest:
         assert 'NIKA_SESSION_ID = "sess-abc"' in toml
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not codex_sdk_available(), reason="openai-codex + ~/.codex/auth.json required"
 )
@@ -89,6 +91,7 @@ class CodexSdkAgentPipelineTest(CommonPipelineSteps, OrderedPipelineTestCase):
         self._step_eval_metrics()
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and codex_sdk_available()),
     reason="containerlab/gnmic/Docker or openai-codex credentials not available",

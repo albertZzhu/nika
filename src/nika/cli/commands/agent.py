@@ -1,16 +1,17 @@
 """Commands for running diagnosis agents."""
 
+import os
+
 import typer
 
 from agent.local_cli.codex_cli.codex_worker import REASONING_EFFORT_LEVELS
 from agent.sandbox.config import (
-    ENV_AGENT_SANDBOX,
     ENV_SANDBOX_CPUS,
     ENV_SANDBOX_ENV_FILE,
-    ENV_SANDBOX_IMAGE,
     ENV_SANDBOX_KEEP,
     ENV_SANDBOX_MEMORY,
-    ENV_SANDBOX_NETWORK,
+    ENV_SANDBOX_OFFLINE_SDK_WHEELS,
+    ENV_SANDBOX_UPSTREAM_PROXY,
 )
 from nika.utils.agent_config import (
     ENV_AGENT_TYPE,
@@ -89,47 +90,44 @@ def agent_run(
     session_id: str | None = typer.Option(
         None, "--session_id", help="Target session id."
     ),
-    sandbox: bool = typer.Option(
-        False,
-        "--sandbox",
-        envvar=ENV_AGENT_SANDBOX,
-        help="Run the agent inside the Docker sandbox container.",
-    ),
-    sandbox_image: str | None = typer.Option(
-        None,
-        "--sandbox-image",
-        envvar=ENV_SANDBOX_IMAGE,
-        help="Docker image for sandbox execution (default: nika/agent-sandbox:latest).",
-    ),
     sandbox_env_file: str | None = typer.Option(
         None,
         "--sandbox-env-file",
         envvar=ENV_SANDBOX_ENV_FILE,
-        help="Env file for whitelisted credential injection into the sandbox.",
+        help="Env file for credential resolution into the sandbox.",
     ),
     sandbox_keep_container: bool = typer.Option(
         False,
         "--sandbox-keep-container",
         envvar=ENV_SANDBOX_KEEP,
-        help="Do not remove the sandbox container after the agent exits.",
+        help="Do not remove the sbx sandbox after the agent exits (debug).",
     ),
     sandbox_cpus: str | None = typer.Option(
         None,
         "--sandbox-cpus",
         envvar=ENV_SANDBOX_CPUS,
-        help="CPU limit for the sandbox container (docker --cpus).",
+        help="CPU limit for the sandbox.",
     ),
     sandbox_memory: str | None = typer.Option(
         None,
         "--sandbox-memory",
         envvar=ENV_SANDBOX_MEMORY,
-        help="Memory limit for the sandbox container (docker --memory).",
+        help="Memory limit for the sandbox (e.g. 8g).",
     ),
-    sandbox_network: str | None = typer.Option(
+    sandbox_offline_sdk_wheels: bool = typer.Option(
+        False,
+        "--sandbox-offline-sdk-wheels",
+        envvar=ENV_SANDBOX_OFFLINE_SDK_WHEELS,
+        help=(
+            "Stage host-cached SDK wheels into the sandbox (faster SDK/SADE "
+            "deploys; avoids re-downloading deps on every sbx start)."
+        ),
+    ),
+    sandbox_upstream_proxy: str | None = typer.Option(
         None,
-        "--sandbox-network",
-        envvar=ENV_SANDBOX_NETWORK,
-        help="Docker network mode for sandbox (bridge or host; use host with Clash TUN).",
+        "--sandbox-proxy",
+        envvar=ENV_SANDBOX_UPSTREAM_PROXY,
+        help="Upstream proxy for sbx daemon (e.g. http://127.0.0.1:7890 for Clash).",
     ),
 ) -> None:
     """Run the agent on the current session task."""
@@ -140,6 +138,9 @@ def agent_run(
             f"reasoning_effort must be one of {', '.join(REASONING_EFFORT_LEVELS)}"
         )
 
+    if sandbox_upstream_proxy:
+        os.environ[ENV_SANDBOX_UPSTREAM_PROXY] = sandbox_upstream_proxy
+
     try:
         start_agent(
             agent_type,
@@ -148,13 +149,11 @@ def agent_run(
             max_steps,
             session_id=session_id,
             reasoning_effort=reasoning_effort,
-            sandbox=sandbox,
-            sandbox_image=sandbox_image,
             sandbox_env_file=sandbox_env_file,
             sandbox_keep_container=sandbox_keep_container,
             sandbox_cpus=sandbox_cpus,
             sandbox_memory=sandbox_memory,
-            sandbox_network=sandbox_network,
+            sandbox_offline_sdk_wheels=sandbox_offline_sdk_wheels,
         )
     except (FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc

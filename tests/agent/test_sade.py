@@ -8,6 +8,7 @@ from agent.community.sade.config import prepare_sade_sdk_env, sade_credentials_a
 from agent.utils.phases import DIAGNOSIS
 from nika.utils.session_store import SessionStore
 from tests.agent._assertions import assert_submission_fields
+from tests.agent.sandbox_support import SANDBOX_E2E_SUPERSEDED
 from tests.support.integration_base import OrderedPipelineTestCase
 from tests.support.integration_pipeline import (
     ClabCommonPipelineSteps,
@@ -83,6 +84,7 @@ class SadeMcpAdapterTest:
         assert "task_mcp_server" in servers
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not sade_available(), reason="claude-agent-sdk + ANTHROPIC credentials required"
 )
@@ -127,6 +129,7 @@ class SadeAgentPipelineTest(CommonPipelineSteps, OrderedPipelineTestCase):
         self._step_eval_metrics()
 
 
+@SANDBOX_E2E_SUPERSEDED
 @pytest.mark.skipif(
     not (_min3clos_prerequisites() and sade_available()),
     reason="containerlab/gnmic/Docker or SADE credentials not available",

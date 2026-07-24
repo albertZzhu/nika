@@ -1,15 +1,20 @@
 # NIKA tests
 
-Test layout mirrors `src/`: `tests/agent/` for `src/agent/`, `tests/nika/` for `src/nika/`.
-Shared integration helpers live under `tests/support/`.
+Test layout mirrors product surfaces:
+
+- `tests/agent/` → `src/agent/`
+- `tests/nika/` → `src/nika/`
+- `tests/benchmark/` → `nika benchmark` (YAML cases + `src/nika/workflows/benchmark/`)
+- `tests/support/` → shared helpers
 
 ## Layout
 
-| Directory | Maps to `src/` | Purpose |
-|-----------|----------------|---------|
-| `tests/agent/` | `src/agent/` | Per-agent unit tests and integration pipelines |
+| Directory | Maps to | Purpose |
+|-----------|---------|---------|
+| `tests/agent/` | `src/agent/` | Per-agent unit tests and sandbox E2E |
+| `tests/benchmark/` | `benchmark/` + workflow run/resume | Batch, resume, sandbox benchmark runs |
 | `tests/nika/cli/` | `src/nika/cli/` | CLI smoke and import wiring |
-| `tests/nika/workflows/` | `src/nika/workflows/` | Benchmark, eval, and end-to-end pipeline tests |
+| `tests/nika/workflows/integration/` | end-to-end session pipeline | env → inject → mock agent → eval |
 | `tests/nika/problems/` | `src/nika/problems/` | Failure injection smoke tests (Kathara + Containerlab) |
 | `tests/nika/net_env/` | `src/nika/net_env/` | Network environment deploy and topology checks |
 | `tests/nika/service/` | `src/nika/service/` | Service-layer unit and live API smoke tests |
@@ -43,39 +48,69 @@ pipeline** on `simple_bgp` / `link_down`:
 | `test_autogen.py` | `byo.autogen` | — | Docker + `DEEPSEEK_API_KEY` |
 | `test_sade.py` | `community.sade` | SDK env + MCP adapter | Docker + `claude-agent-sdk` + Anthropic creds |
 | `test_claude_sdk.py` | `sdk.claude_sdk` | SDK env + MCP adapter | Docker + `claude-agent-sdk` + Anthropic creds |
-| `test_codex_sdk.py` | `sdk.codex_sdk` | auth/reasoning + MCP TOML | Docker + `openai-codex` + `~/.codex/auth.json` |
+| `test_codex_sdk.py` | `sdk.codex_sdk` | auth/reasoning + MCP TOML | sbx + `openai-codex` + `OPENAI_API_KEY` |
 | `test_mcp_server_selection.py` | shared MCP | diagnosis server selection | — |
+| `test_sbx.py` | sandbox | sbx manager, credentials, proxy | — |
+| `test_sandbox.py` | sandbox | manifest, redaction, SDK context | — |
+| `test_sandbox_security.py` | sandbox | microVM security probe | sbx + Docker |
+| `test_sandbox_isolation.py` | sandbox | distinct gateway ports + cross-sandbox MCP policy isolation | unit; sbx for peer-gateway probe |
+| `test_sandbox_agents.py` | sandbox | five-agent E2E (`simple_bgp` / `link_down`) | sbx + Docker; Codex=`OPENAI_API_KEY`+`gpt-5-mini`, Claude/SADE=`DEEPSEEK_API_KEY`+`deepseek-v4-flash` |
+
+Host-side pipeline classes in `test_*_cli.py`, `test_*_sdk.py`, and `test_sade.py` are skipped for live agent E2E; sandbox coverage lives in `test_sandbox_agents.py`.
 
 ```shell
 # All agent tests (unit + pipeline; missing credentials skip pipeline only)
 uv run pytest tests/agent/ -v
 
-# Unit tests only (no Docker)
-uv run pytest tests/agent/test_agent_config.py -v
+# Sandbox unit tests only (no sbx/lab)
+uv run pytest tests/agent/test_sbx.py tests/agent/test_sandbox.py -v
+
+# Security probe (sbx + MCP gateway)
+uv run pytest tests/agent/test_sandbox_security.py -v
+
+# Cross-sandbox isolation (unit + sbx peer-gateway probe)
+uv run pytest tests/agent/test_sandbox_isolation.py -v
+
+# Sandbox E2E (Codex needs OpenAI; Claude/SADE need DeepSeek)
+uv run pytest tests/agent/test_sandbox_agents.py -v
 ```
 
-## Workflow tests (`tests/nika/workflows/`)
+## Benchmark tests (`tests/benchmark/`)
 
-### Benchmark (`benchmark/`)
+Covers `nika benchmark run` / resume — not YAML inject-param generation.
 
 | Module | Purpose |
 |--------|---------|
-| `test_batch.py` | Parallel `nika benchmark run --batch-size N` with mock agent (Docker) |
 | `test_resume.py` | Resume/fingerprint unit tests (no Docker) |
+| `test_batch.py` | Parallel mock batch |
+| `test_sandbox_benchmark.py` | Claude + Codex sandbox single/parallel (`--batch-size 2`) |
+| `helpers.py` | Load inject params from bundled benchmark YAML |
 
 ```shell
-uv run pytest tests/nika/workflows/benchmark/test_resume.py -v
-uv run pytest tests/nika/workflows/benchmark/test_batch.py -v   # requires Docker
+uv run pytest tests/benchmark/test_resume.py -v
+uv run pytest tests/benchmark/test_batch.py -v                 # requires Docker
+uv run pytest tests/benchmark/test_sandbox_benchmark.py -v    # sbx + API key
 ```
 
-### Eval (`eval/`)
+## Sandbox verified status (local E2E, 2026-07-24)
 
-| Module | Purpose |
-|--------|---------|
-| `test_clean.py` | `remove_session_results` artifact cleanup |
-| `test_session_batch.py` | Batch eval session iteration and LLM judge wiring |
+| Area | Status | Notes |
+|------|--------|-------|
+| `test_sbx.py` / `test_sandbox.py` | **Passed** | Credentials, proxy, auth helpers |
+| `test_sandbox_security.py` | **Passed** | microVM policy + MCP gateway isolation |
+| `test_sandbox_isolation.py` | **Passed** | Distinct ports/names + unallowed peer gateway port blocked |
+| Codex CLI / SDK (`test_sandbox_agents.py`, `OPENAI_API_KEY`, `gpt-5-mini`) | **Passed** | MCP tools → submission → eval |
+| Claude CLI / SDK / SADE (`test_sandbox_agents.py`, DeepSeek, `deepseek-v4-flash`) | **Passed** | Anthropic-compatible DeepSeek |
+| Benchmark single case (`test_sandbox_benchmark.py`, Claude/DeepSeek) | **Passed** | Same sandbox path as `nika agent run` |
+| Benchmark Claude parallel (`--batch-size 2`) | **Passed** | Concurrent `link_down` + `link_flap` |
+| Benchmark Codex parallel (`--batch-size 2`, `gpt-5-mini`) | **Passed** | Concurrent isolated sessions |
+| Live OAuth / subscription E2E | **Not tested** | Unit coverage in `test_sbx.py` only |
+| Official Anthropic API (non-DeepSeek) sandbox E2E | **Not tested** | Current E2E uses DeepSeek |
+| Default Codex model `gpt-5.4-mini` | **Not verified** on restricted OpenAI projects | E2E uses `gpt-5-mini` when needed |
 
-### Integration pipeline (`integration/`)
+Prerequisites: `sbx login`, KVM, Docker/Kathara. Optional `NIKA_SANDBOX_UPSTREAM_PROXY` when Clash/TUN blocks LLM websockets. See [docs/agent-sandbox.md](../docs/agent-sandbox.md).
+
+## Integration pipeline (`tests/nika/workflows/integration/`)
 
 | Module | Purpose |
 |--------|---------|

@@ -32,8 +32,10 @@ def openai_api_key_available() -> bool:
 def codex_cli_available() -> bool:
     if shutil.which("codex") is None:
         return False
+    from agent.sandbox.sbx.credentials import sbx_openai_credential_available
+
     return (
-        bool(os.environ.get("OPENAI_API_KEY"))
+        sbx_openai_credential_available()
         or (Path.home() / ".codex" / "auth.json").is_file()
     )
 

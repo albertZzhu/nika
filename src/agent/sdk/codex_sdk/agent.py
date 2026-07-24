@@ -11,8 +11,8 @@ from typing import Any
 
 from agent.sdk.codex_sdk.phases.diagnosis import CodexSdkDiagnosisPhase
 from agent.sdk.codex_sdk.phases.submission import CodexSdkSubmissionPhase
+from agent.sandbox.sdk_context import resolve_sdk_session_fields
 from agent.utils.phases import DIAGNOSIS, SUBMISSION
-from nika.utils.session import Session
 
 
 class CodexSdkAgent:
@@ -31,12 +31,7 @@ class CodexSdkAgent:
         self.reasoning_effort = reasoning_effort
         self._stream_output = stream_output
 
-        session = Session()
-        session.load_running_session(session_id=session_id)
-        self.session = session
-        self.session_dir: str = session.session_dir
-
-        scenario_name: str = getattr(session, "scenario_name", "")
+        self.session_dir, scenario_name = resolve_sdk_session_fields(session_id)
 
         self._diagnosis_phase = CodexSdkDiagnosisPhase(
             session_id=session_id,

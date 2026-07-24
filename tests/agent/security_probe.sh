@@ -15,8 +15,14 @@ check() {
     fi
 }
 
-# Docker socket must not be accessible.
-check "no_docker_socket" test ! -S /var/run/docker.sock
+# Docker socket / CLI checks depend on sandbox type.
+# Native sbx microVMs include an isolated Docker daemon (not the host daemon).
+if [ -z "${NIKA_SBX_NATIVE:-}" ]; then
+    check "no_docker_socket" test ! -S /var/run/docker.sock
+    check "no_docker_cli" test -z "$(command -v docker || true)"
+else
+    echo "PASS: sbx_isolated_docker_expected"
+fi
 
 # Host home must not be mounted (agent user home is /home/agent only).
 check "no_host_home_mount" test ! -d /root/.ssh
@@ -25,6 +31,12 @@ check "no_host_home_mount" test ! -d /root/.ssh
 if [ -n "${NIKA_SANDBOX_PROBE_FILE:-}" ]; then
     check "no_host_probe_file" test ! -r "$NIKA_SANDBOX_PROBE_FILE"
 fi
+
+# Ground truth must not be readable from inside the sandbox.
+if [ -n "${NIKA_SANDBOX_GROUND_TRUTH:-}" ]; then
+    check "no_ground_truth_file" test ! -r "$NIKA_SANDBOX_GROUND_TRUTH"
+fi
+check "no_ground_truth_in_workspace" test ! -r ./ground_truth.json
 
 # If gateway health check fails, print URL for debugging.
 if [ -n "${NIKA_MCP_GATEWAY_AGENT_URL:-}" ]; then
@@ -37,8 +49,10 @@ if [ -n "${NIKA_MCP_GATEWAY_AGENT_URL:-}" ]; then
     fi
 fi
 
-# Docker CLI must not be available inside sandbox.
-check "no_docker_cli" test -z "$(command -v docker || true)"
+# Docker CLI must not be available on the host-style sandbox.
+if [ -z "${NIKA_SBX_NATIVE:-}" ]; then
+    check "no_docker_cli" test -z "$(command -v docker || true)"
+fi
 
 # Kathara CLI must not be available inside sandbox.
 check "no_kathara_cli" test -z "$(command -v kathara || true)"

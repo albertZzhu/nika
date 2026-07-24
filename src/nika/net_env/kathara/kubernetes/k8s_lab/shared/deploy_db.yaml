@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: worddb-container
-        image: postgres
+        image: postgres:16
         ports:
         - containerPort: 5432
         env:
@@ -50,7 +50,7 @@ spec:
     spec:
       containers:
       - name: weatherdb-container
-        image: postgres
+        image: postgres:16
         ports:
         - containerPort: 5432
         env:
